@@ -9,6 +9,9 @@ from fastapi import APIRouter
 from uuid import uuid4
 from app.schemas.token import Token
 from app.core.auth import create_user_token
+from datetime import timedelta
+from app.core.security import create_access_token
+
 
 
 router = APIRouter()
@@ -69,9 +72,13 @@ def anonymous_login():
     #Genera un JWT para sesión anónima sin tocar la base de datos.    
     # 1. Creamos un UUID para identificar la sesión
     anon_id = str(uuid4())
-    # 2. Generamos el token incluyendo is_anonymous=True
-    token = create_user_token({"sub": anon_id, "is_anonymous": True})
-    # 3. Devolvemos el esquema Token { access_token, token_type }
+    # Definir expiración de 24 horas para usuarios anónimos
+    expires = timedelta(hours=24)
+    # Creamos el JWT con sub=anon_id e is_anonymous=True
+    token = create_access_token(
+        data={"sub": anon_id, "is_anonymous": True},
+        expires_delta=expires
+    )
     return {"access_token": token, "token_type": "bearer"}
 
 @router.post("/complete", response_model=Token)
