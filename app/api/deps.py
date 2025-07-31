@@ -28,8 +28,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     return user
 
-def get_current_token(
-    payload: Dict[str, Any] = Depends(get_token_data)
-) -> Dict[str, Any]:
-    # Para rutas que aceptan anónimos y registrados
+def get_current_token(token: str = Depends(oauth2_scheme)) -> dict:
+    payload = decode_access_token(token)
+    # aquí ya tendrás payload["gender"], payload["device_os"], etc.
     return payload

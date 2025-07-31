@@ -4,6 +4,7 @@ from app.core.security import create_access_token as _create_token, verify_passw
 from datetime import timedelta
 from app.schemas.user import UserLogin
 from app.crud import crud_user
+from typing import Optional
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -25,6 +26,11 @@ def anonymous_login(db: Session):
 
 # ---------- Generar JWT ----------
 
-def create_user_token(data: dict):
-    # reutiliza la función de security con el tiempo por defecto
-    return _create_token(data)
+def create_user_token(data: dict, expires_delta: Optional[timedelta] = None)-> str:
+    """Genera un JWT usando _create_token. Si expires_delta no se pasa,
+    usa ACCESS_TOKEN_EXPIRE_MINUTES por defecto """
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    # el helper de security suele aceptar: data, expires_delta
+    return _create_token(data=data, expires_delta=expires_delta)
+

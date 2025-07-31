@@ -33,7 +33,7 @@ def create_user(db: Session, user: UserCreate):
         full_name=user.full_name,
         hashed_password=hashed_password,
         is_active=True,
-        is_anonymous=user.is_anonymous,
+        is_anonymous=False,
     )
     db.add(db_user)
     db.commit()
