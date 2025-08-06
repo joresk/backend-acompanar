@@ -30,13 +30,19 @@ def create_user(db: Session, user: UserCreate, ip_address: Optional[str] = None)
     # Hash de contraseña si existe
     hashed_password = get_password_hash(user.password) if user.password else None
     
-    # Mapear género del frontend al backend
-    gender_map = {
-        "MALE": GenderEnum.MASCULINO,
-        "FEMALE": GenderEnum.FEMENINO,
-        "OTHER": GenderEnum.OTRO
-    }
-    genero = gender_map.get(str(user.genero), GenderEnum.OTRO) if user.genero else GenderEnum.OTRO
+    # FIX: Mapear género correctamente
+    # Si el género viene como string directo desde el frontend
+    if isinstance(user.genero, str):
+        # Mapear valores del frontend a los del backend
+        if user.genero in ["Masculino", "MASCULINO", "MALE"]:
+            genero = GenderEnum.MASCULINO
+        elif user.genero in ["Femenino", "FEMENINO", "FEMALE"]:
+            genero = GenderEnum.FEMENINO
+        else:
+            genero = GenderEnum.OTRO
+    else:
+        # Si ya es un enum, usarlo directamente
+        genero = user.genero if user.genero else GenderEnum.OTRO
     
     db_user = User(
         email=user.email,
@@ -45,7 +51,7 @@ def create_user(db: Session, user: UserCreate, ip_address: Optional[str] = None)
         phone=user.phone,
         is_active=True,
         is_anonymous=user.is_anonymous,
-        genero=genero,
+        genero=genero,  # Usar el género mapeado
         ip_dispositivo=ip_address
     )
     
