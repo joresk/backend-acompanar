@@ -70,16 +70,30 @@ def create_anonymous_user(
     random_suffix = secrets.token_hex(4)
     full_name = f"Usuario Anónimo {random_suffix}"
     
-    # Mapear género
+    # FIX: Mapear género correctamente (el frontend envía MALE/FEMALE/OTHER)
     gender_map = {
         "MALE": GenderEnum.MASCULINO,
-        "FEMALE": GenderEnum.FEMENINO,
-        "OTHER": GenderEnum.OTRO
+        "Masculino": GenderEnum.MASCULINO,
+        "FEMALE": GenderEnum.FEMENINO,  
+        "Femenino": GenderEnum.FEMENINO,
+        "OTHER": GenderEnum.OTRO,
+        "Otro": GenderEnum.OTRO
     }
-    genero = gender_map.get(request.gender, GenderEnum.OTRO)
+    
+    # Obtener el género del request (viene como string)
+    gender_value = request.gender if isinstance(request.gender, str) else str(request.gender)
+    genero = gender_map.get(gender_value, GenderEnum.OTRO)
+    
+    # DEBUG: Imprimir para verificar
+    print(f"Gender recibido: {request.gender}")
+    print(f"Gender mapeado: {genero}")
+    print(f"IP recibida: {ip_address or request.device_info.ipAddress}")
     
     db_user = User(
         full_name=full_name,
+        email=None,  # Anónimos no tienen email
+        hashed_password=None,  # Anónimos no tienen password
+        phone=None,  # Anónimos no tienen teléfono
         is_anonymous=True,
         is_active=True,
         genero=genero,

@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Enum, text
+from sqlalchemy import Column, String, Boolean, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID, INET, ENUM as PG_ENUM
+from sqlalchemy.orm import relationship
 from app.db.base import Base
 from datetime import datetime
 import enum
@@ -22,12 +23,15 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     genero = Column(
         PG_ENUM(
-            GenderEnum,
-            name="genero_usuario",
-            values_callable=lambda enum: [e.value for e in enum],  # usa los valores
-            native_enum=True
+            'Masculino', 'Femenino', 'Otro',
+            name='genero_usuario',
+            create_type=False  # Ya existe en BD
         ),
-        default=GenderEnum.OTRO.value,
+        default='Otro',
         nullable=False
     )
     ip_dispositivo = Column(INET, nullable=True)
+    
+    # Relaciones
+    contactos = relationship("Contact", back_populates="usuario", cascade="all, delete-orphan", order_by="Contact.id") # CAMBIO: "usuarios" a "usuario"
+    peticiones = relationship("Peticion", back_populates="usuario", cascade="all, delete-orphan") # CAMBIO: "usuarios" a "usuario"

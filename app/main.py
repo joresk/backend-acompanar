@@ -1,42 +1,61 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.db.session import engine
-from app.db.base import Base
-from app.api import routes_auth, routes_users
+from app.core.config import settings
+from app.api.api import api_router
+import logging
 
-# Importar modelos para crear tablas
-from app.models import user
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
-# Crear tablas si no existen
-Base.metadata.create_all(bind=engine)
-
+# Crear aplicación
 app = FastAPI(
-    title="Acompañar API",
-    description="API para la aplicación de apoyo contra la violencia familiar",
-    version="1.0.0"
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios permitidos
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Incluir routers
-app.include_router(routes_auth.router, prefix="/auth", tags=["Autenticación"])
-app.include_router(routes_users.router, prefix="/users", tags=["Usuarios"])
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# Root endpoint
 @app.get("/")
 def read_root():
     return {
-        "message": "Bienvenido a Acompañar API",
-        "version": "1.0.0",
-        "status": "active"
+        "name": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "status": "active",
+        "message": "Bienvenido a Acompañar API"
     }
 
+# Health check
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "service": "acompaniar-api",
+        "version": settings.VERSION
+    }
+
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    logging.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
+    logging.info(f"Database: {settings.POSTGRES_DB}")
+    logging.info(f"SMS Service: {'Enabled' if settings.TWILIO_ACCOUNT_SID else 'Disabled'}")
+
+# Shutdown event
+@app.on_event("shutdown")
+async def shutdown_event():
+    logging.info(f"Shutting down {settings.PROJECT_NAME}")

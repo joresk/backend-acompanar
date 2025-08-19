@@ -65,21 +65,36 @@ def anonymous_login(
 ):
     """Login anónimo que crea un usuario temporal en BD"""
     try:
-        # Obtener IP del cliente
-        client_ip = request.client.host if request.client else None
+        # FIX: Obtener IP real del cliente
+        # Primero intentar desde headers (si hay proxy/nginx)
+        client_ip = (
+            request.headers.get("X-Forwarded-For") or
+            request.headers.get("X-Real-IP") or
+            (request.client.host if request.client else None)
+        )
+        
+        # Si viene de Android emulador, la IP será 10.0.2.2
+        # Si viene de localhost, será 127.0.0.1
+        # Usar la IP del device_info si está disponible
+        final_ip = client_ip or req.device_info.ipAddress or "0.0.0.0"
+        
+        print(f"IP detectada - Client: {client_ip}, Device: {req.device_info.ipAddress}, Final: {final_ip}")
+        print(f"Gender recibido: {req.gender}")
         
         # Crear usuario anónimo en BD
         anon_user = crud_user.create_anonymous_user(
             db=db,
             request=req,
-            ip_address=client_ip or req.device_info.ipAddress
+            ip_address=final_ip
         )
+        
+        print(f"Usuario anónimo creado: ID={anon_user.id}, Género={anon_user.genero}")
         
         # Crear token
         payload = {
             "sub": str(anon_user.id),
             "is_anonymous": True,
-            "gender": req.gender,
+            "gender": req.gender,  # Mantener el original para el token
             "device_id": req.device_info.deviceId,
             "first_access": req.device_info.firstAccessDate,
         }
@@ -97,6 +112,7 @@ def anonymous_login(
         return {"access_token": token, "token_type": "bearer"}
         
     except Exception as e:
+        print(f"Error en login anónimo: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al procesar login anónimo: {str(e)}"
