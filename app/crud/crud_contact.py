@@ -201,5 +201,48 @@ class CRUDContact:
             )
         ).first()
         return contact is not None
+    # NUEVO MÉTODO
+    def set_as_primary(self, db: Session, *, contact_id: UUID, user_id: UUID) -> Contact:
+        """Establece un contacto como primario moviéndolo al principio de la lista."""
+        
+        # 1. Obtener todos los contactos del usuario
+        all_contacts = db.query(Contact).filter(Contact.usuario_id == user_id).order_by(Contact.id.asc()).all()
+        
+        # 2. Encontrar el contacto a mover
+        contact_to_set_primary = None
+        other_contacts = []
+        for c in all_contacts:
+            if c.id == contact_id:
+                contact_to_set_primary = c
+            else:
+                other_contacts.append(c)
 
+        if not contact_to_set_primary:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Contacto no encontrado")
+
+        # 3. Reconstruir la lista
+        new_ordered_list = [contact_to_set_primary] + other_contacts
+        
+        # 4. Eliminar todos los contactos existentes (usando tu método remove_all)
+        self.remove_all(db, user_id=user_id)
+        
+        # 5. Volver a crearlos en el nuevo orden
+        created_contacts = []
+        for contact_data in new_ordered_list:
+            new_contact = Contact(
+                usuario_id=user_id,
+                nombre=contact_data.nombre,
+                telefono=contact_data.telefono
+            )
+            db.add(new_contact)
+            created_contacts.append(new_contact)
+            
+        db.commit()
+
+        # Refrescar para obtener los nuevos IDs
+        for c in created_contacts:
+            db.refresh(c)
+            
+        # Devolver el contacto que ahora es primario (el primero de la nueva lista)
+        return created_contacts[0]
 crud_contact = CRUDContact()

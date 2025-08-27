@@ -8,7 +8,7 @@ class Peticion(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
-    contacto_id = Column(UUID(as_uuid=True), ForeignKey("contactos.id", ondelete="RESTRICT"), nullable=False)
+    contacto_id = Column(UUID(as_uuid=True), ForeignKey("contactos.id", ondelete="SET NULL"), nullable=True)
     ubicacion_id = Column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="CASCADE"), nullable=False)
     estado_code = Column(String(20), ForeignKey("estados_peticiones.code"), nullable=False)
     creado_en = Column(DateTime, server_default=func.now(), nullable=False)

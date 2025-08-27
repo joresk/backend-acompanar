@@ -8,8 +8,8 @@ from typing import Optional
 import secrets
 import string
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-ANONYMOUS_TOKEN_EXPIRE_HOURS = 24
+ACCESS_TOKEN_EXPIRE_MINUTES = 300
+ANONYMOUS_TOKEN_EXPIRE_HOURS = 240
 
 def authenticate_user(db: Session, login_data: LoginWithDeviceRequest) -> Optional[User]:
     """Autentica usuario y actualiza información del dispositivo"""

@@ -15,11 +15,13 @@ from app.crud import crud_user
 from app.core.security import get_password_hash
 from datetime import timedelta
 from typing import Optional
+from app.schemas.user import AuthResponseWithUserInfo
+
 
 router = APIRouter()
 
 # ----------- Login tradicional con dispositivo -----------
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=AuthResponseWithUserInfo)
 def login(
     req: LoginWithDeviceRequest,
     request: Request,
@@ -54,10 +56,23 @@ def login(
         })
     
     token = auth.create_user_token(data=payload, expires_delta=expires)
-    return {"access_token": token, "token_type": "bearer"}
+    
+    userinfo = {
+        "id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_anonymous": False,
+        "phone": user.phone,
+        "genero": user.genero
+    }
+    return {
+        "access_token": token, 
+        "token_type": "bearer",
+        "user_info": userinfo  # AGREGAR ESTA LÍNEA
+    }
 
 # ----------- Login anónimo -----------
-@router.post("/anonymous", response_model=Token)
+@router.post("/anonymous", response_model=AuthResponseWithUserInfo)
 def anonymous_login(
     req: AnonymousLoginRequest,
     request: Request,
@@ -109,7 +124,20 @@ def anonymous_login(
             })
         
         token = auth.create_anonymous_token(data=payload)
-        return {"access_token": token, "token_type": "bearer"}
+        user_info = {
+        "id": str(anon_user.id),
+        "email": None,
+        "full_name": "Usuario Anónimo",
+        "is_anonymous": True,
+        "phone": None,
+        "genero": req.gender
+        }
+    
+        return {
+            "access_token": token, 
+            "token_type": "bearer", 
+            "user_info": user_info
+        }
         
     except Exception as e:
         print(f"Error en login anónimo: {str(e)}")

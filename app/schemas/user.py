@@ -76,3 +76,16 @@ class UserOut(BaseModel):
 class UserInDB(UserOut):
     hashed_password: Optional[str] = None
     ip_dispositivo: Optional[str] = None
+
+class UserInfoResponse(BaseModel):
+    id: str
+    email: Optional[str]
+    full_name: Optional[str]
+    is_anonymous: bool
+    phone: Optional[str]
+    genero: Optional[str]
+
+class AuthResponseWithUserInfo(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_info: UserInfoResponse

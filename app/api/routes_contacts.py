@@ -155,7 +155,8 @@ def delete_contact(
             detail="No tienes permiso para eliminar este contacto"
         )
     
-    contact = crud_contact.remove(db=db, id=contact_id)
+    # CAMBIO: Añadir el user_id a la llamada
+    contact = crud_contact.remove(db=db, id=contact_id, user_id=current_user.id)
     return contact
 
 @router.post("/{contact_id}/set-primary", response_model=ContactOut)
@@ -179,6 +180,7 @@ def set_primary_contact(
             detail="No tienes permiso para modificar este contacto"
         )
     
+    # CAMBIO: Llamar a la función que acabamos de crear
     contact = crud_contact.set_as_primary(
         db=db,
         contact_id=contact_id,

@@ -8,10 +8,23 @@ from app.crud import crud_user
 from uuid import uuid4
 from app.schemas.token import Token
 from datetime import timedelta
+from app.api.deps import get_current_user
+from app.models.user import User
 from app.schemas.auth import AnonymousLoginRequest
+
+from app.api import deps
 
 router = APIRouter()
 
+# ----------- Obtener datos del usuario actual -----------
+@router.get("/me", response_model=UserOut)
+def read_users_me(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Obtener el perfil del usuario actual.
+    """
+    return current_user
 # Rutas que aceptan anónimos (usando payload)
 @router.get("/public-info")
 def public_info(token_data: dict = Depends(get_current_token)):
@@ -39,11 +52,6 @@ def protected_route(
             detail="Usuario no encontrado"
         )
     return user
-
-# ----------- Ping para test -----------
-@router.get("/ping")
-def ping():
-    return {"status": "ok"}
 
 # ----------- Registro -----------
 @router.post("/register", response_model=UserOut)
