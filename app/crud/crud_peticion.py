@@ -147,5 +147,26 @@ class CRUDPeticion:
             synchronize_session=False
         )
         db.commit()
-
+    #peticiones enviadas
+    def mark_as_sent(
+        self,
+        db: Session,
+        *,
+        peticion_ids: List[UUID]
+    ) -> int:
+        """
+        Marcar peticiones como enviadas exitosamente
+        """
+        try:
+            updated_count = db.query(Peticion).filter(
+                Peticion.id.in_(peticion_ids)
+            ).update(
+            {"estado_code": "atendida"},  # ← CAMBIO: usar "atendida" en lugar de "SENT"
+            synchronize_session=False
+            )
+            db.commit()
+            return updated_count
+        except Exception as e:
+            db.rollback()  # ← AGREGAR: rollback en caso de error
+            raise e
 crud_peticion = CRUDPeticion()

@@ -12,7 +12,8 @@ from app.models.user import User
 from app.schemas.contact import (
     EmergencyAlertRequest,
     EmergencyAlertResponse,
-    UbicacionCreate
+    UbicacionCreate,EmergencyReportRequest,
+    EmergencyReportResponse
 )
 from app.services.sms_service import sms_service
 
@@ -205,3 +206,106 @@ def test_sms_to_contact(
         "contact": contact.nombre,
         "phone": contact.telefono
     }
+
+@router.post("/report")
+async def report_emergency_alert(
+    *,
+    db: Session = Depends(get_db),
+    report_request: EmergencyReportRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Recibir reporte de alerta de emergencia enviada desde la aplicación móvil.
+    
+    Este endpoint es llamado después de que la app móvil envía SMS localmente
+    para registrar la alerta en el backend con fines de auditoría.
+    """
+    
+    try:
+        # Obtener IDs de contactos válidos para el usuario
+        contact_ids = []
+        for contact_data in report_request.contacts:
+            try:
+                # Verificar que el contacto pertenece al usuario
+                contact = crud_contact.get(db=db, id=UUID(contact_data.id))
+                if contact and contact.usuario_id == current_user.id:
+                    contact_ids.append(contact.id)
+            except (ValueError, Exception):
+                # UUID inválido o error de BD, continuar con el siguiente
+                continue
+        
+        if not contact_ids:
+            logger.warning(f"Usuario {current_user.id} reportó alerta sin contactos válidos")
+            # Continuar sin fallar para registrar el evento
+        
+        # Crear ubicación si se proporciona
+        ubicacion_data = None
+        if report_request.location:
+            ubicacion_data = UbicacionCreate(
+                direccion=report_request.location.address or "Ubicación desde dispositivo",
+                latitud=report_request.location.latitude,
+                longitud=report_request.location.longitude
+            )
+        
+        # Crear peticiones en BD para auditoría solo si hay contactos válidos
+        peticiones = []
+        report_id = None
+        
+        if contact_ids:
+            try:
+                # Crear peticiones
+                peticiones = crud_peticion.create_emergency_alert(
+                    db=db,
+                    user_id=current_user.id,
+                    contact_ids=contact_ids,
+                    ubicacion_data=ubicacion_data,
+                    mensaje=report_request.message
+                )
+                
+                # Marcar como atendidas inmediatamente ya que el SMS ya se envió
+                if peticiones:
+                    peticion_ids = [p.id for p in peticiones]
+                    crud_peticion.mark_as_sent(
+                        db=db,
+                        peticion_ids=peticion_ids
+                    )
+                    report_id = str(peticiones[0].id)
+                    
+            except Exception as e:
+                logger.error(f"Error creando peticiones para reporte: {e}")
+                # Hacer rollback explícito y continuar
+                try:
+                    db.rollback()
+                except:
+                    pass
+                # No fallar, el SMS ya se envió exitosamente
+        
+        # Log para auditoría
+        logger.info(
+            f"Alerta reportada por usuario {current_user.id}: "
+            f"{report_request.sms_result.sentCount} SMS enviados, "
+            f"{report_request.sms_result.failedCount} fallos"
+        )
+        
+        return {
+            "success": True,
+            "message": "Reporte de alerta registrado exitosamente",
+            "report_id": report_id,
+            "timestamp": datetime.utcnow()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error procesando reporte de emergencia: {e}")
+        # Rollback explícito
+        try:
+            db.rollback()
+        except:
+            pass
+        
+        # Retornar éxito parcial ya que el SMS ya se envió
+        return {
+            "success": True,  # ← TRUE porque el SMS sí se envió
+            "message": "Alerta enviada correctamente, reporte parcial registrado",
+            "report_id": None,
+            "timestamp": datetime.utcnow()
+        }

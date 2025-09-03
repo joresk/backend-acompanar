@@ -112,3 +112,42 @@ class ContactSyncResponse(BaseModel):
     synced: bool
     contacts: List[ContactOut]
     message: str
+
+# Schemas para Emergency Report (desde app móvil)
+class ContactReportData(BaseModel):
+    id: str
+    nombre: str
+    telefono: str
+    isPrimary: bool = False
+
+class LocationReportData(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    address: Optional[str] = None
+    accuracy: Optional[float] = None
+    timestamp: Optional[int] = None
+
+class SmsContactResult(BaseModel):
+    contactName: str
+    phoneNumber: str
+    success: bool
+    error: Optional[str] = None
+
+class SmsResultReport(BaseModel):
+    success: bool
+    sentCount: int
+    failedCount: int
+    details: List[SmsContactResult]
+
+class EmergencyReportRequest(BaseModel):
+    contacts: List[ContactReportData]
+    location: Optional[LocationReportData] = None
+    message: Optional[str] = Field(None, max_length=500)
+    sms_result: SmsResultReport
+
+# Simplificar la respuesta para evitar problemas de serialización
+class EmergencyReportResponse(BaseModel):
+    success: bool
+    message: str
+    report_id: Optional[str] = None
+    timestamp: datetime
