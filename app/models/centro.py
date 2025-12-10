@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, text, Text
+from sqlalchemy import Column, String,DateTime, ForeignKey, text, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -50,3 +50,15 @@ class CentroAyudaImagen(Base):
     
     # Relación inversa para que cada imagen sepa a qué centro pertenece
     centro = relationship("Centro", back_populates="imagenes")
+
+class ConsultaCentro(Base):
+    __tablename__ = "consultas_centros"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    centro_id = Column(UUID(as_uuid=True), ForeignKey("centros_ayuda.id", ondelete="CASCADE"), nullable=False)
+    consultado_en = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    
+    # Relaciones
+    usuario = relationship("User")
+    centro = relationship("Centro")

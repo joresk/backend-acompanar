@@ -4,7 +4,7 @@ from app.api import (
     routes_users,
     routes_contacts,
     routes_emergency,
-    routes_centros
+    routes_centros, routes_guias
 )
 
 api_router = APIRouter()
@@ -39,3 +39,7 @@ api_router.include_router(
     prefix="/centros",
     tags=["Centros de Ayuda"]
 )
+api_router.include_router(
+    routes_guias.router,
+    prefix="/guias", 
+    tags=["guias"])

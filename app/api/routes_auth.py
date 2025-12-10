@@ -68,7 +68,7 @@ def login(
     return {
         "access_token": token, 
         "token_type": "bearer",
-        "user_info": userinfo  # AGREGAR ESTA LÍNEA
+        "user_info": userinfo 
     }
 
 # ----------- Login anónimo -----------

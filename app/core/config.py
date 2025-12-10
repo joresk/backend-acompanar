@@ -81,4 +81,15 @@ class Settings(BaseSettings):
         extra='ignore' # Esto reemplaza a `class Config`
     )
 
+    # Cloudinary (Almacenamiento de Multimedia)
+    CLOUDINARY_CLOUD_NAME: str = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+    CLOUDINARY_API_KEY: str = os.getenv("CLOUDINARY_API_KEY", "")
+    CLOUDINARY_API_SECRET: str = os.getenv("CLOUDINARY_API_SECRET", "")
+    # --------------------
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra='ignore'
+    )
+
 settings = Settings()

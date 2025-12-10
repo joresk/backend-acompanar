@@ -95,3 +95,17 @@ class CentroListResponse(BaseModel):
     total: int
     page: int = 1
     per_page: int = 10
+
+# Schema para estadísticas
+class CentroStats(BaseModel):
+    centro_id: UUID
+    nombre: str
+    total_consultas: int
+    ultima_consulta: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+# Schema para respuesta de búsqueda con distancia
+class CentroWithDistance(CentroWithDetails):
+    distancia_km: Optional[float] = None

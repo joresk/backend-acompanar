@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime, text, func
+from sqlalchemy import Column, String, ForeignKey, DateTime,Text, text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -9,10 +9,12 @@ class Peticion(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
     contacto_id = Column(UUID(as_uuid=True), ForeignKey("contactos.id", ondelete="SET NULL"), nullable=True)
-    ubicacion_id = Column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="CASCADE"), nullable=False)
+    ubicacion_id = Column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="CASCADE"), nullable=True)
     estado_code = Column(String(20), ForeignKey("estados_peticiones.code"), nullable=False)
     creado_en = Column(DateTime, server_default=func.now(), nullable=False)
-    
+    mensaje = Column(Text, nullable=True) # Mensaje de texto opcional
+    audio = Column(Text, nullable=True)   # URL o Base64 del audio
+
     # Relaciones
     usuario = relationship("User", back_populates="peticiones")
     contacto = relationship("Contact")

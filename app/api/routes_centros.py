@@ -134,11 +134,55 @@ def delete_centro(
     centro_id: UUID,
     admin: User = Depends(get_admin_user)
 ):
-    """Eliminar centro (solo admin)"""
+    """Eliminar un centro (solo admin)"""
     success = crud_centro.delete(db, id=centro_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Centro no encontrado"
         )
+    return {"message": "Centro eliminado exitosamente"}
+@router.post("/{centro_id}/view", status_code=status.HTTP_204_NO_CONTENT)
+def register_centro_view(
+    *,
+    db: Session = Depends(get_db),
+    centro_id: UUID,
+    current_user: User = Depends(get_current_user)
+):
+    """Registrar que un usuario consultó un centro"""
+    centro = crud_centro.get(db, id=centro_id)
+    if not centro:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Centro no encontrado"
+        )
+    
+    crud_centro.register_view(db, centro_id=centro_id, user_id=current_user.id)
     return None
+
+@router.get("/populares", response_model=List[CentroWithDetails])
+def get_centros_populares(
+    db: Session = Depends(get_db),
+    limit: int = Query(10, ge=1, le=50)
+):
+    """Obtener los centros más consultados"""
+    centros = crud_centro.get_populares(db, limit=limit)
+    return centros
+#búsqueda por proximidad
+@router.get("/cercanos", response_model=List[CentroWithDetails])
+def get_centros_cercanos(
+    db: Session = Depends(get_db),
+    lat: float = Query(..., ge=-90, le=90, description="Latitud"),
+    lon: float = Query(..., ge=-180, le=180, description="Longitud"),
+    radius: float = Query(10, ge=1, le=100, description="Radio en kilómetros"),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """Obtener centros cercanos a una ubicación"""
+    centros = crud_centro.get_by_proximity(
+        db, 
+        lat=lat, 
+        lon=lon, 
+        radius_km=radius,
+        limit=limit
+    )
+    return centros

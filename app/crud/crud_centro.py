@@ -189,5 +189,81 @@ class CRUDCentro:
             result[cat.id] = count
         
         return result
+    def register_view(self, db: Session, *, centro_id: UUID, user_id: UUID) -> bool:
+        """Registrar que un usuario consultó un centro"""
+        from app.models.centro import ConsultaCentro
+        
+        consulta = ConsultaCentro(
+            usuario_id=user_id,
+            centro_id=centro_id
+        )
+        db.add(consulta)
+        db.commit()
+        return True
 
+    def get_populares(self, db: Session, limit: int = 10) -> List[Centro]:
+        """Obtener los centros más consultados"""
+        from app.models.centro import ConsultaCentro
+        from sqlalchemy import func
+        
+        # Subconsulta para contar vistas por centro
+        subquery = db.query(
+            ConsultaCentro.centro_id,
+            func.count(ConsultaCentro.id).label('views')
+        ).group_by(ConsultaCentro.centro_id).subquery()
+        
+        # Query principal con joins
+        centros = db.query(Centro)\
+            .join(subquery, Centro.id == subquery.c.centro_id)\
+            .options(
+                joinedload(Centro.ubicacion),
+                joinedload(Centro.categoria),
+                joinedload(Centro.telefonos),
+                joinedload(Centro.imagenes)
+            )\
+            .order_by(subquery.c.views.desc())\
+            .limit(limit)\
+            .all()
+        
+        return centros
+    
+    #método de búsqueda por distancia en CRUD
+    def get_by_proximity(
+        self, 
+        db: Session, 
+        *,
+        lat: float,
+        lon: float,
+        radius_km: float = 10,
+        limit: int = 20
+    ) -> List[Centro]:
+        """
+        Obtener centros cercanos a una ubicación
+        Usa la fórmula de Haversine para calcular distancia
+        """
+        from sqlalchemy import func
+        
+        # Fórmula de Haversine en SQL
+        distance_formula = func.acos(
+            func.cos(func.radians(lat)) * 
+            func.cos(func.radians(Ubicacion.latitud)) * 
+            func.cos(func.radians(Ubicacion.longitud) - func.radians(lon)) + 
+            func.sin(func.radians(lat)) * 
+            func.sin(func.radians(Ubicacion.latitud))
+        ) * 6371  # Radio de la Tierra en km
+        
+        centros = db.query(Centro)\
+            .join(Ubicacion)\
+            .filter(distance_formula <= radius_km)\
+            .options(
+                joinedload(Centro.ubicacion),
+                joinedload(Centro.categoria),
+                joinedload(Centro.telefonos),
+                joinedload(Centro.imagenes)
+            )\
+            .order_by(distance_formula)\
+            .limit(limit)\
+            .all()
+        
+        return centros
 crud_centro = CRUDCentro()

@@ -144,6 +144,8 @@ class EmergencyReportRequest(BaseModel):
     location: Optional[LocationReportData] = None
     message: Optional[str] = Field(None, max_length=500)
     sms_result: SmsResultReport
+    mensaje: Optional[str] = None
+    audio: Optional[str] = None
 
 # Simplificar la respuesta para evitar problemas de serialización
 class EmergencyReportResponse(BaseModel):
