@@ -11,7 +11,8 @@ from datetime import timedelta
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.auth import AnonymousLoginRequest
-
+from typing import List
+from pydantic import BaseModel
 from app.api import deps
 
 router = APIRouter()
@@ -111,3 +112,51 @@ def complete_registration(
     new_user = crud_user.create_user(db, user_in)
     token = auth.create_user_token({"sub": str(new_user.id)})
     return {"access_token": token, "token_type": "bearer"}
+# Endpoint para obtener profesionales de terreno disponibles para despacho
+@router.get("/profesionales", response_model=List[UserOut])
+def get_profesionales(
+    db: Session = Depends(deps.get_db),
+    # current_user: models.User = Depends(deps.get_current_active_user) # Comentado para facilitar pruebas
+):
+    """
+    Obtiene la lista de usuarios con rol PROFESIONAL_TERRENO para el despacho
+    """
+    # Buscamos a los usuarios que tengan el rol correspondiente
+    profesionales = db.query(User).filter(
+        User.rol == "Profesional_Terreno",
+        User.is_active == True
+    ).all()
+    
+    return profesionales
+
+# Esquema temporal para recibir el nuevo rol
+class RoleUpdate(BaseModel):
+    rol: str
+
+# ----------- Panel de Administración (Gestión de Usuarios) -----------
+@router.get("/", response_model=List[UserOut])
+def get_all_users(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+    # token_data: dict = Depends(get_current_token) # Opcional: Proteger solo para admins
+):
+    """
+    Obtiene la lista de todos los usuarios registrados en la plataforma.
+    """
+    return crud_user.get_users(db, skip=skip, limit=limit)
+# Endpoint para actualizar el rol de un usuario (Ej: de Victima a Profesional_Terreno)
+@router.put("/{user_id}/rol")
+def update_role(
+    user_id: str, 
+    payload: RoleUpdate, 
+    db: Session = Depends(get_db)
+):
+    """
+    Actualiza el rol de un usuario (Ej: de 'Victima' a 'Profesional_Terreno').
+    """
+    updated_user = crud_user.update_user_role(db, user_id, payload.rol)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    return {"message": "Rol actualizado exitosamente", "rol": updated_user.rol}

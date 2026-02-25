@@ -8,15 +8,19 @@ class GenderEnum(str, Enum):
     MASCULINO = "Masculino"
     FEMENINO = "Femenino"
     OTRO = "Otro"
-
+class RolUsuarioEnum(str, Enum):
+    VICTIMA = "Victima"
+    OPERADOR_CENTRAL = "Operador_Central"
+    PROFESIONAL_TERRENO = "Profesional_Terreno"
 class UserCreate(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = None
     full_name: str
     phone: Optional[str] = None
     is_anonymous: bool = False
-    genero: Optional[str] = "Otro"  # Cambiar a string
+    genero: Optional[str] = "Otro" 
     ip_dispositivo: Optional[str] = None
+    rol: Optional[str] = RolUsuarioEnum.VICTIMA.value
     
     @validator('genero')
     def validate_gender(cls, v):
@@ -67,6 +71,7 @@ class UserOut(BaseModel):
     is_active: bool
     created_at: datetime
     genero: GenderEnum
+    rol: RolUsuarioEnum
 
     class Config:
         from_attributes = True
@@ -84,6 +89,7 @@ class UserInfoResponse(BaseModel):
     is_anonymous: bool
     phone: Optional[str]
     genero: Optional[str]
+    rol: Optional[str]
 
 class AuthResponseWithUserInfo(BaseModel):
     access_token: str

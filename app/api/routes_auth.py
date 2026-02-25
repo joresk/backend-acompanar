@@ -63,7 +63,8 @@ def login(
         "full_name": user.full_name,
         "is_anonymous": False,
         "phone": user.phone,
-        "genero": user.genero
+        "genero": user.genero,
+        "rol": user.rol
     }
     return {
         "access_token": token, 
@@ -130,7 +131,8 @@ def anonymous_login(
         "full_name": "Usuario Anónimo",
         "is_anonymous": True,
         "phone": None,
-        "genero": req.gender
+        "genero": req.gender,
+        "rol": anon_user.rol
         }
     
         return {

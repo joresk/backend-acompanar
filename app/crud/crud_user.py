@@ -146,3 +146,13 @@ def update_user_device_info(
     db.commit()
     db.refresh(user)
     return user
+# -------- Actualizar rol de usuario --------
+def update_user_role(db: Session, user_id: str, new_role: str) -> Optional[User]:
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        return None
+    
+    db_user.rol = new_role
+    db.commit()
+    db.refresh(db_user)
+    return db_user

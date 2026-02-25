@@ -9,7 +9,10 @@ class GenderEnum(str, enum.Enum):
     MASCULINO = "Masculino"
     FEMENINO = "Femenino"
     OTRO = "Otro"
-
+class RolUsuarioEnum(str, enum.Enum):
+    VICTIMA = "Victima"
+    OPERADOR_CENTRAL = "Operador_Central"
+    PROFESIONAL_TERRENO = "Profesional_Terreno"
 class User(Base):
     __tablename__ = "usuarios"
 
@@ -31,7 +34,11 @@ class User(Base):
         nullable=False
     )
     ip_dispositivo = Column(INET, nullable=True)
+    rol = Column(String(50), default=RolUsuarioEnum.VICTIMA.value, nullable=False)
     
     # Relaciones
     contactos = relationship("Contact", back_populates="usuario", cascade="all, delete-orphan", order_by="Contact.id") # CAMBIO: "usuarios" a "usuario"
-    peticiones = relationship("Peticion", back_populates="usuario", cascade="all, delete-orphan") # CAMBIO: "usuarios" a "usuario"
+    #peticiones = relationship("Peticion", back_populates="usuario", cascade="all, delete-orphan") # CAMBIO: "usuarios" a "usuario"
+    peticiones_creadas = relationship("Peticion", foreign_keys="Peticion.usuario_id", back_populates="usuario", cascade="all, delete-orphan")
+    peticiones_despachadas = relationship("Peticion", foreign_keys="Peticion.operador_id", back_populates="operador")
+    peticiones_asignadas = relationship("Peticion", foreign_keys="Peticion.profesional_id", back_populates="profesional")

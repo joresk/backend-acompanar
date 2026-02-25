@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, List
 from datetime import datetime, timedelta
 from uuid import UUID
 import logging
+from pydantic import BaseModel
 
 from app.api.deps import get_current_user, get_db, get_current_token
 from app.crud.crud_contact import crud_contact
@@ -21,6 +22,10 @@ from app.services.storage_service import storage_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# 1. Esquema temporal para recibir el ID del profesional desde la web
+class DespachoRequest(BaseModel):
+    profesional_id: str
 
 @router.get("/alert/status")
 def get_alert_status(
@@ -79,6 +84,7 @@ def get_emergency_history(
             for p in peticiones
         ]
     }
+# Endpoint para recibir alertas de emergencia desde la app móvil
 @router.post("/report")
 async def report_emergency_alert(
     *,
@@ -126,36 +132,49 @@ async def report_emergency_alert(
         peticiones = []
         report_id = None
         # 3. Crear peticiones MANUALMENTE para incluir Audio y Mensaje
-        if contact_ids:
-            try:
-                for contact_id in contact_ids:
-                    peticion = Peticion(
-                        usuario_id=current_user.id,
-                        contacto_id=contact_id,
-                        ubicacion_id=ubicacion_id,
-                        estado_code="atendida", # Asumimos atendida/enviada por ser un reporte de la app
-                        creado_en=datetime.utcnow(),        
-                        mensaje=report_request.mensaje or report_request.message,
-                        audio=audio_url
-                    )
-                    db.add(peticion)
-                    peticiones.append(peticion)
-                
-                db.commit()
-                
-                # Refrescar para obtener IDs y datos
-                for p in peticiones:
-                    db.refresh(p)
+        try:
+            # A. Siempre creamos UNA petición principal para la Central Operativa (Radar)
+            peticion_central = Peticion(
+                usuario_id=current_user.id,
+                contacto_id=None, # No pertenece a un contacto, va a la policía/operador
+                ubicacion_id=ubicacion_id,
+                estado_code="en_triaje", # <-- IMPORTANTE: Este estado lo hace aparecer en el mapa
+                creado_en=datetime.utcnow(),        
+                mensaje=report_request.mensaje or report_request.message,
+                audio=audio_url
+            )
+            db.add(peticion_central)
+            peticiones.append(peticion_central)
 
-                if peticiones:
-                    report_id = str(peticiones[0].id)
-                    
-            except Exception as e:
-                logger.error(f"Error creando peticiones para reporte: {e}")
-                try:
-                    db.rollback()
-                except:
-                    pass
+            # B. Si además hay contactos personales, les creamos su registro
+            for contact_id in contact_ids:
+                peticion_contacto = Peticion(
+                    usuario_id=current_user.id,
+                    contacto_id=contact_id,
+                    ubicacion_id=ubicacion_id,
+                    estado_code="en_triaje",
+                    creado_en=datetime.utcnow(),        
+                    mensaje=report_request.mensaje or report_request.message,
+                    audio=audio_url
+                )
+                db.add(peticion_contacto)
+                peticiones.append(peticion_contacto)
+            
+            db.commit()
+            
+            # Refrescar para obtener IDs y datos
+            for p in peticiones:
+                db.refresh(p)
+
+            if peticiones:
+                report_id = str(peticiones[0].id) # Guardamos el ID de la central
+                
+        except Exception as e:
+            logger.error(f"Error creando peticiones para reporte: {e}")
+            try:
+                db.rollback()
+            except:
+                pass
 
         # Log para auditoría
         logger.info(
@@ -184,3 +203,80 @@ async def report_emergency_alert(
             "report_id": None,
             "timestamp": datetime.utcnow()
         }
+# 2. Endpoint para obtener alertas para el Radar Web
+@router.get("/activas")
+def get_alertas_activas(
+    db: Session = Depends(get_db),
+    token_data: dict = Depends(get_current_token)
+):
+    """Obtiene todas las emergencias que necesitan atención en la central"""
+    
+    # Validar que solo el operador vea esto (Opcional por ahora, recomendado a futuro)
+    # if token_data.get("rol") != "Operador_Central": ...
+
+    # Buscar peticiones en estado pendiente o en triaje
+    # Usamos joinedload para traer la ubicación en la misma consulta
+    peticiones = db.query(Peticion).options(joinedload(Peticion.ubicacion)).filter(
+        Peticion.estado_code.in_(["pendiente", "en_triaje"])
+    ).all()
+    
+    resultado = []
+    for p in peticiones:
+        # Extraemos coordenadas si la petición tiene ubicación registrada
+        lat = p.ubicacion.latitud if p.ubicacion else None
+        lng = p.ubicacion.longitud if p.ubicacion else None
+        
+        resultado.append({
+            "id": str(p.id),
+            "usuario_id": str(p.usuario_id),
+            "estado": p.estado_code,
+            "lat": lat,
+            "lng": lng,
+            # Si tienes un campo de fecha, envíalo (ej. p.fecha_creacion), sino envíamos "Ahora"
+            "fecha": "Ahora" 
+        })
+    
+    return resultado
+
+# 3. Endpoint para que el Operador despache una unidad
+@router.put("/{peticion_id}/despachar")
+def despachar_alerta(
+    peticion_id: str,
+    payload: DespachoRequest,
+    db: Session = Depends(get_db),
+    token_data: dict = Depends(get_current_token)
+):
+    """Asigna un profesional a la alerta y cambia su estado a 'despachada'"""
+    peticion = db.query(Peticion).filter(Peticion.id == peticion_id).first()
+    if not peticion:
+        raise HTTPException(status_code=404, detail="Emergencia no encontrada")
+        
+    peticion.estado_code = "despachada"
+    peticion.profesional_id = payload.profesional_id
+    
+    # Registramos también qué operador de la central tomó la decisión
+    peticion.operador_id = token_data.get("sub") 
+    
+    db.commit()
+    return {"message": "Unidad despachada", "estado": peticion.estado_code}
+# 4. Endpoint para obtener el historial completo de emergencias (para auditoría de tiempos)
+@router.get("/historial")
+def get_historial_alertas(
+    db: Session = Depends(get_db),
+    # token_data: dict = Depends(get_current_token) # Opcional: Proteger para admins
+):
+    """Obtiene el historial completo de emergencias para auditoría de tiempos"""
+    # Obtenemos todas las peticiones ordenadas de la más reciente a la más antigua
+    peticiones = db.query(Peticion).order_by(Peticion.creado_en.desc()).all()
+    
+    resultado = []
+    for p in peticiones:
+        resultado.append({
+            "id": str(p.id)[:8], # Solo los primeros 8 caracteres para que la tabla sea legible
+            "estado": p.estado_code,
+            "fecha_creacion": p.creado_en.isoformat() if p.creado_en else None,
+            "victima_id": str(p.usuario_id)[:8],
+            "profesional_id": str(p.profesional_id)[:8] if p.profesional_id else "Sin asignar"
+        })
+    
+    return resultado

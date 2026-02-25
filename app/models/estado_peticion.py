@@ -25,4 +25,8 @@ class EstadoPeticion(Base):
             ('resuelta', 'La petición fue resuelta satisfactoriamente'),
             ('rechazada', 'La petición fue rechazada por falta de información'),
             ('error', 'Error al procesar la petición')
+            ('en_triaje', 'En evaluación por la central operativa'),
+            ('asignada', 'Profesional asignado por el operador'),
+            ('en_camino', 'Profesional en camino al lugar del incidente'),
+            ('en_sitio', 'Profesional llegó al lugar del incidente'),
         ]
