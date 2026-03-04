@@ -47,5 +47,35 @@ class StorageService:
         except Exception as e:
             print(f"Error subiendo audio a Cloudinary: {str(e)}")
             return None # Fallback: guardará None en la BD en vez de explotar
+    @staticmethod
+    def upload_base64_image(base64_string: str) -> str:
+        """
+        Sube una imagen (foto del reporte) en Base64 a Cloudinary y retorna la URL segura.
+        Retorna None si falla o si el input es vacío.
+        """
+        if not base64_string:
+            return None
+            
+        try:
+            # Generar un nombre único para la foto
+            file_id = f"reporte_foto_{uuid.uuid4()}"
+            
+            # En Android ya le agregamos el prefijo "data:image/jpeg;base64,"
+            upload_data = base64_string
+
+            # Subir a Cloudinary indicando que es una imagen (resource_type="image")
+            response = cloudinary.uploader.upload(
+                upload_data, 
+                public_id=file_id,
+                resource_type="image", 
+                folder="acompanar_fotos" # Carpeta separada para mantener orden
+            )
+            
+            # Retornar la URL pública (https)
+            return response.get("secure_url")
+            
+        except Exception as e:
+            print(f"Error subiendo imagen a Cloudinary: {e}")
+            return None
 
 storage_service = StorageService()

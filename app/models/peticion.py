@@ -2,6 +2,7 @@ from sqlalchemy import Column, String, ForeignKey, DateTime,Text, text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.db.base import Base
+from app.models.informe_mision import InformeMision
 
 class Peticion(Base):
     __tablename__ = "peticiones"
@@ -14,6 +15,7 @@ class Peticion(Base):
     profesional_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     estado_code = Column(String(20), ForeignKey("estados_peticiones.code"), nullable=False)
     creado_en = Column(DateTime, server_default=func.now(), nullable=False)
+    finalizado_en = Column(DateTime, nullable=True)
     mensaje = Column(Text, nullable=True) # Mensaje de texto opcional
     audio = Column(Text, nullable=True)   # URL o Base64 del audio
 
@@ -24,3 +26,4 @@ class Peticion(Base):
     contacto = relationship("Contact")
     ubicacion = relationship("Ubicacion")
     estado = relationship("EstadoPeticion")
+    informe = relationship("InformeMision", back_populates="peticion", uselist=False, cascade="all, delete-orphan")

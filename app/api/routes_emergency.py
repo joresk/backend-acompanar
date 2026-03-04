@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 import logging
 from pydantic import BaseModel
+from app.models.informe_mision import InformeMision
 
 from app.api.deps import get_current_user, get_db, get_current_token
 from app.crud.crud_contact import crud_contact
@@ -26,6 +27,9 @@ router = APIRouter()
 # 1. Esquema temporal para recibir el ID del profesional desde la web
 class DespachoRequest(BaseModel):
     profesional_id: str
+class FinalizarMisionRequest(BaseModel):
+    informe: str
+    foto_base64: Optional[str] = None
 
 @router.get("/alert/status")
 def get_alert_status(
@@ -246,15 +250,24 @@ def despachar_alerta(
     db: Session = Depends(get_db),
     token_data: dict = Depends(get_current_token)
 ):
-    """Asigna un profesional a la alerta y cambia su estado a 'despachada'"""
+    """Asigna un profesional a la alerta (Máximo 1 misión activa por profesional)"""
+    
+    # 1. Verificar si el profesional ya tiene una misión en curso
+    mision_activa = db.query(Peticion).filter(
+        Peticion.profesional_id == payload.profesional_id,
+        Peticion.estado_code == "despachada"
+    ).first()
+    
+    if mision_activa:
+        raise HTTPException(status_code=400, detail="Este profesional ya tiene una misión en curso.")
+
+    # 2. Despachar
     peticion = db.query(Peticion).filter(Peticion.id == peticion_id).first()
     if not peticion:
         raise HTTPException(status_code=404, detail="Emergencia no encontrada")
         
     peticion.estado_code = "despachada"
     peticion.profesional_id = payload.profesional_id
-    
-    # Registramos también qué operador de la central tomó la decisión
     peticion.operador_id = token_data.get("sub") 
     
     db.commit()
@@ -278,5 +291,69 @@ def get_historial_alertas(
             "victima_id": str(p.usuario_id)[:8],
             "profesional_id": str(p.profesional_id)[:8] if p.profesional_id else "Sin asignar"
         })
-    
     return resultado
+# ----------- App Profesional: Consultar Misión Asignada -----------
+@router.get("/mision")
+def get_mision_actual(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    El celular del profesional consulta si tiene alguna víctima asignada.
+    """
+    # Buscamos la primera petición despachada a este profesional
+    peticion = db.query(Peticion).options(joinedload(Peticion.ubicacion)).filter(
+        Peticion.profesional_id == str(current_user.id),
+        Peticion.estado_code == "despachada"
+    ).first()
+
+    if not peticion:
+        return None # Devuelve null/None si está libre y patrullando
+    
+    # Si tiene misión, devolvemos las coordenadas de la víctima
+    lat = peticion.ubicacion.latitud if peticion.ubicacion else None
+    lng = peticion.ubicacion.longitud if peticion.ubicacion else None
+        
+    return {
+        "mision_id": str(peticion.id),
+        "victima_id": str(peticion.usuario_id),
+        "lat": lat,
+        "lng": lng,
+        "mensaje": peticion.mensaje or "Emergencia (Botón de Pánico)",
+        "estado": peticion.estado_code
+    }
+@router.put("/{peticion_id}/resolver")
+def resolver_mision(
+    peticion_id: str, 
+    payload: FinalizarMisionRequest,
+    db: Session = Depends(get_db)
+):
+    """Marca una emergencia como resuelta y guarda el informe en su tabla."""
+    peticion = db.query(Peticion).filter(Peticion.id == peticion_id).first()
+    
+    if not peticion:
+        raise HTTPException(status_code=404, detail="Misión no encontrada")
+        
+    foto_url = None
+    if payload.foto_base64:
+        try:
+            # Usamos la nueva función dedicada a imágenes
+            foto_url = storage_service.upload_base64_image(payload.foto_base64) 
+        except Exception as e:
+            print(f"Error subiendo foto a Cloudinary: {e}")
+
+    # 1. Crear el registro en la nueva tabla normalizada
+    nuevo_informe = InformeMision(
+        peticion_id=peticion.id,
+        detalle_resolucion=payload.informe,
+        foto_url=foto_url
+    )
+    db.add(nuevo_informe)
+
+    # 2. Actualizar el estado de la Petición
+    peticion.estado_code = "resuelta"
+    peticion.finalizado_en = datetime.utcnow()
+    
+    db.commit()
+    
+    return {"mensaje": "Misión finalizada con éxito y reporte guardado", "estado": "resuelta"}
