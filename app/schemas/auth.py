@@ -35,3 +35,7 @@ class RecoverPasswordRequest(BaseModel):
 class RecoverPasswordResponse(BaseModel):
     message: str
     success: bool
+
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+    device_info: DeviceInfo

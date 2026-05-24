@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.schemas.user import UserCreate, UserLogin, UserOut
+from app.schemas.user import UserCreate, UserLogin, UserOut, UserLocationUpdate
 from app.db.session import get_db
 from app.api.deps import get_current_token
 from app.core import auth
 from app.crud import crud_user
 from uuid import uuid4
 from app.schemas.token import Token
-from datetime import timedelta
+from datetime import timedelta, datetime
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.schemas.auth import AnonymousLoginRequest
@@ -160,3 +160,24 @@ def update_role(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
     return {"message": "Rol actualizado exitosamente", "rol": updated_user.rol}
+
+#Endpoint para que los profesionales de terreno actualicen su ubicación en tiempo real
+@router.put("/me/location")
+def update_my_location(
+    location: UserLocationUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Actualiza la ubicación en tiempo real del profesional para el despacho autónomo"""
+    
+    # Validamos por seguridad que solo los profesionales usen este radar
+    if current_user.rol != "Profesional_Terreno":
+        raise HTTPException(status_code=403, detail="Solo profesionales pueden reportar ubicación")
+        
+    # Actualizamos los campos que creaste en la base de datos
+    current_user.latitud_actual = location.latitud
+    current_user.longitud_actual = location.longitud
+    current_user.ultima_ubicacion_en = datetime.utcnow()
+    
+    db.commit()
+    return {"success": True, "message": "Ubicación actualizada en el radar"}

@@ -70,7 +70,39 @@ def get_centro_stats(
         "total_centros": total,
         "por_categoria": stats
     }
+#búsqueda por proximidad
+@router.get("/cercanos", response_model=List[CentroWithDetails])
+def get_centros_cercanos(
+    db: Session = Depends(get_db),
+    # 1. Cambiamos de float obligatorio a str opcional para soportar los nulos de n8n
+    lat: Optional[str] = Query(None, description="Latitud"),
+    lon: Optional[str] = Query(None, description="Longitud"),
+    radius: float = Query(10, ge=1, le=100, description="Radio en kilómetros"),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """Obtener centros cercanos a una ubicación"""
+    
+    # 2. Atrapamos cualquier formato vacío o nulo que envíe n8n si el GPS estaba apagado
+    if not lat or not lon or lat.lower() == "null" or lon.lower() == "null" or lat == "" or lon == "":
+        return [] # Devolvemos lista vacía para que LangChain/n8n no colapse
+        
+    try:
+        # 3. Convertimos a número flotante de forma segura
+        lat_float = float(lat)
+        lon_float = float(lon)
+    except ValueError:
+        return [] # Si llega basura en el texto, también devolvemos vacío
 
+    # 4. Buscamos normalmente en la base de datos
+    centros = crud_centro.get_by_proximity(
+        db, 
+        lat=lat_float, 
+        lon=lon_float, 
+        radius_km=radius,
+        limit=limit
+    )
+    return centros
+# Endpoint para obtener detalles de un centro específico
 @router.get("/{centro_id}", response_model=CentroWithDetails)
 def get_centro(
     centro_id: UUID,
@@ -142,6 +174,8 @@ def delete_centro(
             detail="Centro no encontrado"
         )
     return {"message": "Centro eliminado exitosamente"}
+
+# Endpoint para registrar que un usuario consultó un centro (para estadísticas de popularidad)
 @router.post("/{centro_id}/view", status_code=status.HTTP_204_NO_CONTENT)
 def register_centro_view(
     *,
@@ -167,22 +201,4 @@ def get_centros_populares(
 ):
     """Obtener los centros más consultados"""
     centros = crud_centro.get_populares(db, limit=limit)
-    return centros
-#búsqueda por proximidad
-@router.get("/cercanos", response_model=List[CentroWithDetails])
-def get_centros_cercanos(
-    db: Session = Depends(get_db),
-    lat: float = Query(..., ge=-90, le=90, description="Latitud"),
-    lon: float = Query(..., ge=-180, le=180, description="Longitud"),
-    radius: float = Query(10, ge=1, le=100, description="Radio en kilómetros"),
-    limit: int = Query(20, ge=1, le=50)
-):
-    """Obtener centros cercanos a una ubicación"""
-    centros = crud_centro.get_by_proximity(
-        db, 
-        lat=lat, 
-        lon=lon, 
-        radius_km=radius,
-        limit=limit
-    )
     return centros

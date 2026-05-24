@@ -16,7 +16,12 @@ from app.core.security import get_password_hash
 from datetime import timedelta
 from typing import Optional
 from app.schemas.user import AuthResponseWithUserInfo
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from app.schemas.auth import GoogleLoginRequest
 
+# (Pega aquí tu Web Client ID de Firebase)
+GOOGLE_CLIENT_ID = "900729583370-49512moivpic97ebuengt76llh5nr0d9.apps.googleusercontent.com"
 
 router = APIRouter()
 
@@ -288,3 +293,72 @@ def complete_registration(
     token = auth.create_user_token(data=payload)
     
     return {"access_token": token, "token_type": "bearer"}
+
+@router.post("/google", response_model=AuthResponseWithUserInfo)
+def google_login(
+    req: GoogleLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """Login/Registro unificado con Google"""
+    try:
+        # 1. Validar el token contra los servidores de Google
+        idinfo = id_token.verify_oauth2_token(
+            req.id_token,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID
+        )
+
+        email = idinfo['email']
+        full_name = idinfo.get('name', 'Usuario de Google')
+
+        # 2. Buscar si el usuario ya existe en nuestra base de datos
+        user = crud_user.get_user_by_email(db, email)
+
+        if not user:
+            # 3. Si no existe, creamos la cuenta automáticamente.
+            # Le asignamos una clave aleatoria temporal para cumplir con el CRUD
+            temp_pass = auth.generate_temp_password()
+            new_user_data = UserCreate(
+                email=email,
+                password=temp_pass,
+                full_name=full_name,
+                is_anonymous=False,
+                rol="Victima"
+            )
+            user = crud_user.create_user(db, new_user_data)
+
+        # 4. Actualizar información del dispositivo
+        if req.device_info and req.device_info.ipAddress:
+            crud_user.update_user_device_info(db, user, req.device_info.ipAddress)
+
+        # 5. Crear el token interno de tu aplicación (JWT)
+        expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+        payload = {
+            "sub": str(user.id),
+            "email": user.email,
+            "is_anonymous": False,
+            "device_id": req.device_info.deviceId
+        }
+        token = auth.create_user_token(data=payload, expires_delta=expires)
+
+        userinfo = {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_anonymous": False,
+            "phone": user.phone,
+            "genero": user.genero,
+            "rol": user.rol
+        }
+
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user_info": userinfo
+        }
+
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de Google inválido o expirado"
+        )

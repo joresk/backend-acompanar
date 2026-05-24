@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
+import math, json, os, logging
+from sqlalchemy import and_
 from typing import Optional, List
 from datetime import datetime, timedelta
 from uuid import UUID
-import logging
 from pydantic import BaseModel
 from app.models.informe_mision import InformeMision
-
 from app.api.deps import get_current_user, get_db, get_current_token
 from app.crud.crud_contact import crud_contact
 from app.crud.crud_peticion import crud_peticion
@@ -17,13 +17,18 @@ from app.schemas.contact import (
     UbicacionCreate,EmergencyReportRequest,
     EmergencyReportResponse
 )
+from app.schemas.guia import ChatbotTriageRequest, ChatbotTriageResponse
 from app.models.peticion import Peticion
 from app.models.ubicacion import Ubicacion
 from app.services.storage_service import storage_service
+from groq import Groq
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+client = Groq()
 
+# Interruptor global en memoria (Se reinicia si el servidor se apaga)
+AUTO_DISPATCH_ENABLED = False
 # 1. Esquema temporal para recibir el ID del profesional desde la web
 class DespachoRequest(BaseModel):
     profesional_id: str
@@ -163,7 +168,43 @@ async def report_emergency_alert(
                 )
                 db.add(peticion_contacto)
                 peticiones.append(peticion_contacto)
-            
+            # ---> INICIO AUTO-DESPACHO AUTÓNOMO
+            if AUTO_DISPATCH_ENABLED and ubicacion_id:
+                # 1. Buscar profesionales activos
+                profesionales = db.query(User).filter(
+                    User.rol == "Profesional_Terreno",
+                    User.latitud_actual.isnot(None),
+                    User.longitud_actual.isnot(None)
+                ).all()
+
+                profesional_mas_cercano = None
+                distancia_minima = float('inf')
+
+                for prof in profesionales:
+                    # Verificar que no tenga otra misión activa
+                    mision_activa = db.query(Peticion).filter(
+                        Peticion.profesional_id == prof.id,
+                        Peticion.estado_code == "despachada"
+                    ).first()
+
+                    if not mision_activa:
+                        # Calcular distancia
+                        dist = calcular_distancia(
+                            report_request.location.latitude, 
+                            report_request.location.longitude,
+                            float(prof.latitud_actual), 
+                            float(prof.longitud_actual)
+                        )
+                        # Asignar si está a menos de 5 km (o tu límite de cobertura)
+                        if dist < 5.0 and dist < distancia_minima:
+                            distancia_minima = dist
+                            profesional_mas_cercano = prof
+
+                # Si encontramos a alguien, le asignamos la alerta central instantáneamente
+                if profesional_mas_cercano:
+                    peticion_central.estado_code = "despachada"
+                    peticion_central.profesional_id = profesional_mas_cercano.id
+            # ---> FIN AUTO-DESPACHO AUTÓNOMO
             db.commit()
             
             # Refrescar para obtener IDs y datos
@@ -221,7 +262,8 @@ def get_alertas_activas(
     # Buscar peticiones en estado pendiente o en triaje
     # Usamos joinedload para traer la ubicación en la misma consulta
     peticiones = db.query(Peticion).options(joinedload(Peticion.ubicacion)).filter(
-        Peticion.estado_code.in_(["pendiente", "en_triaje"])
+        Peticion.estado_code.in_(["pendiente", "en_triaje"]), 
+        Peticion.contacto_id == None
     ).all()
     
     resultado = []
@@ -237,7 +279,8 @@ def get_alertas_activas(
             "lat": lat,
             "lng": lng,
             # Si tienes un campo de fecha, envíalo (ej. p.fecha_creacion), sino envíamos "Ahora"
-            "fecha": "Ahora" 
+            "fecha": "Ahora",
+            "audio_url": p.audio 
         })
     
     return resultado
@@ -317,6 +360,7 @@ def get_mision_actual(
     return {
         "mision_id": str(peticion.id),
         "victima_id": str(peticion.usuario_id),
+        "nombre_victima": peticion.usuario.full_name if peticion.usuario else "Desconocido",
         "lat": lat,
         "lng": lng,
         "mensaje": peticion.mensaje or "Emergencia (Botón de Pánico)",
@@ -357,3 +401,190 @@ def resolver_mision(
     db.commit()
     
     return {"mensaje": "Misión finalizada con éxito y reporte guardado", "estado": "resuelta"}
+
+@router.get("/misiones/historial/me")
+def get_historial_profesional(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Obtener el historial de misiones cerradas y métricas para el Dashboard del Profesional.
+    Calcula automáticamente el SLA (Tiempo de respuesta).
+    """
+    # 1. Buscar misiones asignadas a este profesional que ya estén terminadas
+    misiones = db.query(Peticion).options(
+        joinedload(Peticion.ubicacion)
+    ).filter(
+        Peticion.profesional_id == str(current_user.id),
+        Peticion.estado_code.in_(["resuelta", "derivada"]) # Ajustar si tienes otros estados finales
+    ).order_by(Peticion.finalizado_en.desc()).all()
+
+    total_misiones = len(misiones)
+    tiempos_sla = []
+    historial_response = []
+    
+    # 2. Procesar cada misión para la lista
+    for p in misiones:
+        # A. Cálculo de SLA individual
+        sla_str = "--"
+        if p.creado_en and p.finalizado_en:
+            delta = p.finalizado_en - p.creado_en
+            minutos = int(delta.total_seconds() // 60)
+            segundos = int(delta.total_seconds() % 60)
+            sla_str = f"{minutos}m {segundos}s"
+            tiempos_sla.append(delta.total_seconds())
+
+        # B. Formateo de fecha
+        fecha_str = p.finalizado_en.strftime("%d %b %Y, %H:%M hs") if p.finalizado_en else "Desconocida"
+        
+        # C. Anonimizar Zona (Protección de la víctima)
+        zona_texto = "Zona no registrada"
+        if p.ubicacion and p.ubicacion.direccion:
+            # Tomamos la primera parte de la dirección antes de una coma para no dar la calle exacta
+            partes = p.ubicacion.direccion.split(',')
+            zona_texto = partes[0].strip() if len(partes) > 1 else p.ubicacion.direccion
+        
+        # D. Lógica visual para Android (Verde o Naranja)
+        is_success = (p.estado_code == "resuelta")
+        
+        historial_response.append({
+            "id": str(p.id),
+            "date": fecha_str,
+            "status": p.estado_code.capitalize(),
+            "zone": zona_texto,
+            "sla": sla_str,
+            "isSuccess": is_success
+        })
+        
+    # 3. Calcular SLA Promedio Global
+    avg_sla_str = "0m 0s"
+    if tiempos_sla:
+        avg_sec = sum(tiempos_sla) / len(tiempos_sla)
+        avg_min = int(avg_sec // 60)
+        avg_s = int(avg_sec % 60)
+        avg_sla_str = f"{avg_min}m {avg_s}s"
+
+    # Devolvemos la estructura exacta que Android necesita
+    return {
+        "totalMissions": str(total_misiones),
+        "avgSla": avg_sla_str,
+        "history": historial_response
+    }
+from pydantic import BaseModel
+
+# Creamos un esquema rápido para recibir el Base64
+class AudioUploadRequest(BaseModel):
+    audio_base64: str
+
+@router.patch("/{peticion_id}/audio")
+def upload_deferred_audio(
+    peticion_id: str,
+    request: AudioUploadRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Sube y adjunta un archivo de audio a una emergencia que ya fue disparada previamente.
+    (Arquitectura de Doble Impacto: Disparo instantáneo + Evidencia diferida).
+    """
+    # 1. Buscamos la petición principal
+    peticion = db.query(Peticion).filter(Peticion.id == peticion_id).first()
+    
+    if not peticion:
+        raise HTTPException(status_code=404, detail="Petición de emergencia no encontrada")
+
+    # 2. Subimos el audio a Cloudinary (o el servicio que uses)
+    try:
+        audio_url = storage_service.upload_base64_audio(request.audio_base64)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error subiendo audio: {str(e)}")
+
+    # 3. Actualizamos la petición principal con la URL
+    peticion.audio = audio_url
+
+    # 4. (Opcional) Si en tu lógica copiaste esta petición para los contactos, 
+    # buscamos y actualizamos las copias vinculadas a este mismo origen
+    #peticiones_vinculadas = db.query(Peticion).filter(
+    #    Peticion.origen_peticion_id == peticion_id
+    #).all()
+    
+    #for pv in peticiones_vinculadas:
+    #    pv.audio_url = audio_url
+
+    db.commit()
+
+    return {"message": "Evidencia de audio adjuntada exitosamente", "audio_url": audio_url}
+
+# Endpoint para que el Panel de Control (Streamlit) encienda/apague el modo autónomo
+@router.post("/toggle-auto-dispatch")
+def toggle_auto_dispatch(estado: bool, current_user: User = Depends(get_current_user)):
+    global AUTO_DISPATCH_ENABLED
+    AUTO_DISPATCH_ENABLED = estado
+    return {"auto_dispatch": AUTO_DISPATCH_ENABLED}
+
+@router.get("/auto-dispatch-status")
+def get_auto_dispatch_status():
+    return {"auto_dispatch": AUTO_DISPATCH_ENABLED}
+
+# Función Haversine para cálculo en memoria
+def calcular_distancia(lat1, lon1, lat2, lon2):
+    R = 6371.0 # Radio de la Tierra en km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+# Endpoint para el análisis semántico de mensajes usando Groq (Triage Bot)
+@router.post("/triage-bot", response_model=ChatbotTriageResponse)
+def triage_mensaje_bot(payload: ChatbotTriageRequest):
+    """
+    Envía el mensaje a Groq para un análisis semántico de riesgo y anonimización.
+    """
+    
+    # El System Prompt es clave: le da a la IA su rol y fuerza la estructura de salida.
+    system_prompt = """
+    Eres un sistema de triage experto y empático en violencia de género para Tucumán. 
+    Tu única tarea es analizar el mensaje de la usuaria y clasificarlo.
+    
+    DEBES devolver ÚNICAMENTE un objeto JSON válido con las siguientes 3 claves:
+    1. "nivel_riesgo": Asigna estrictamente uno de estos valores:
+       - "emergencia" (peligro físico inminente, golpes, armas, auxilio).
+       - "boton_panico" (si pide explícitamente "salir", "borrar chat", "cancelar", "me pillaron").
+       - "asesoramiento" (preguntas sobre denuncias, lugares, apoyo psicológico, dudas legales).
+    2. "intencion": Una frase muy corta de lo que busca (ej. "informacion_denuncia", "purga_chat").
+    3. "mensaje_anonimizado": El mismo mensaje original, pero reemplazando nombres propios, direcciones exactas, DNIs o teléfonos con la palabra [CENSURADO].
+
+    Ejemplo de salida: {"nivel_riesgo": "asesoramiento", "intencion": "ubicacion_centros", "mensaje_anonimizado": "hola, busco ayuda cerca de [CENSURADO]"}
+    """
+    
+    try:
+        # Llamada a la API de Groq
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": payload.mensaje}
+            ],
+            model="llama-3.1-8b-instant", # Modelo rapidísimo y gratuito
+            response_format={"type": "json_object"}, # Fuerza a que la salida sea JSON
+            temperature=0.0 # Temperatura 0 para que no sea creativo, sino preciso y analítico
+        )
+
+        # Extraemos y leemos el JSON que generó Groq
+        respuesta_json = json.loads(chat_completion.choices[0].message.content)
+
+        return ChatbotTriageResponse(
+            nivel_riesgo=respuesta_json.get("nivel_riesgo", "asesoramiento"),
+            intencion=respuesta_json.get("intencion", "desconocida"),
+            mensaje_anonimizado=respuesta_json.get("mensaje_anonimizado", payload.mensaje)
+        )
+
+    except Exception as e:
+        # Fallback de seguridad vital: Si Groq se cae, el sistema no colapsa, 
+        # asume riesgo medio (asesoramiento) para que n8n pueda seguir respondiendo.
+        print(f"Error crítico en Triage Groq: {e}")
+        return ChatbotTriageResponse(
+            nivel_riesgo="asesoramiento", 
+            intencion="error_api_fallback",
+            mensaje_anonimizado=payload.mensaje
+        )
+    

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, text
+from sqlalchemy import Column, String, Boolean, DateTime, text, Numeric
 from sqlalchemy.dialects.postgresql import UUID, INET, ENUM as PG_ENUM
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -34,6 +34,8 @@ class User(Base):
         nullable=False
     )
     ip_dispositivo = Column(INET, nullable=True)
+    latitud_actual = Column(Numeric(10, 6), nullable=True)
+    longitud_actual = Column(Numeric(10, 6), nullable=True)
     rol = Column(String(50), default=RolUsuarioEnum.VICTIMA.value, nullable=False)
     
     # Relaciones

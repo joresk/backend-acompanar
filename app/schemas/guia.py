@@ -19,3 +19,12 @@ class GuiaSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ChatbotTriageRequest(BaseModel):
+    mensaje: str
+    id_sesion: str
+
+class ChatbotTriageResponse(BaseModel):
+    nivel_riesgo: str # Puede ser: 'emergencia', 'asesoramiento', 'boton_panico'
+    intencion: str
+    mensaje_anonimizado: str

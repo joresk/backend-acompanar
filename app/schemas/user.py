@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
+from sqlalchemy import Numeric
 
 class GenderEnum(str, Enum):
     MASCULINO = "Masculino"
@@ -95,3 +96,7 @@ class AuthResponseWithUserInfo(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_info: UserInfoResponse
+
+class UserLocationUpdate(BaseModel):
+    latitud: float
+    longitud: float
