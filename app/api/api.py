@@ -4,7 +4,7 @@ from app.api import (
     routes_users,
     routes_contacts,
     routes_emergency,
-    routes_centros, routes_guias
+    routes_centros, routes_chatbot, routes_rag, routes_faq
 )
 
 api_router = APIRouter()
@@ -39,7 +39,19 @@ api_router.include_router(
     prefix="/centros",
     tags=["Centros de Ayuda"]
 )
+
 api_router.include_router(
-    routes_guias.router,
-    prefix="/guias", 
-    tags=["guias"])
+    routes_chatbot.router,
+    prefix="/chatbot",
+    tags=["Chatbot"]
+)
+api_router.include_router(
+    routes_rag.router,
+    prefix="/rag",
+    tags=["RAG"]
+)
+api_router.include_router(
+    routes_faq.router,
+    prefix="/faqs",
+    tags=["FAQs"]
+)

@@ -17,7 +17,7 @@ from app.schemas.contact import (
     UbicacionCreate,EmergencyReportRequest,
     EmergencyReportResponse
 )
-from app.schemas.guia import ChatbotTriageRequest, ChatbotTriageResponse
+from app.schemas.chatbot import ChatbotTriageRequest, ChatbotTriageResponse
 from app.models.peticion import Peticion
 from app.models.ubicacion import Ubicacion
 from app.services.storage_service import storage_service
@@ -575,7 +575,9 @@ def triage_mensaje_bot(payload: ChatbotTriageRequest):
         return ChatbotTriageResponse(
             nivel_riesgo=respuesta_json.get("nivel_riesgo", "asesoramiento"),
             intencion=respuesta_json.get("intencion", "desconocida"),
-            mensaje_anonimizado=respuesta_json.get("mensaje_anonimizado", payload.mensaje)
+            mensaje_anonimizado=respuesta_json.get("mensaje_anonimizado", payload.mensaje),
+            id_sesion=payload.id_sesion,
+            mensaje_original=payload.mensaje
         )
 
     except Exception as e:

@@ -7,3 +7,7 @@ python-jose[cryptography]
 python-dotenv
 email-validator
 cloudinary
+sentence-transformers
+pytest
+httpx
+pytest-asyncio

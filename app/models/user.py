@@ -44,3 +44,4 @@ class User(Base):
     peticiones_creadas = relationship("Peticion", foreign_keys="Peticion.usuario_id", back_populates="usuario", cascade="all, delete-orphan")
     peticiones_despachadas = relationship("Peticion", foreign_keys="Peticion.operador_id", back_populates="operador")
     peticiones_asignadas = relationship("Peticion", foreign_keys="Peticion.profesional_id", back_populates="profesional")
+    perfil_seguridad = relationship("PerfilSeguridad", back_populates="usuario", uselist=False, cascade="all, delete-orphan")

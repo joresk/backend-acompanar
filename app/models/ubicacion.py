@@ -10,12 +10,3 @@ class Ubicacion(Base):
     latitud = Column(Numeric(10, 6), nullable=False)  # Precisión de 6 decimales
     longitud = Column(Numeric(10, 6), nullable=False)
 
-# app/models/estado_peticion.py
-from sqlalchemy import Column, String
-from app.db.base import Base
-
-class EstadoPeticion(Base):
-    __tablename__ = "estados_peticiones"
-    
-    code = Column(String(20), primary_key=True)
-    descripcion = Column(String(100), nullable=False)
