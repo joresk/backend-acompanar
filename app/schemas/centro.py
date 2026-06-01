@@ -45,9 +45,20 @@ class UbicacionOut(UbicacionBase):
         from_attributes = True
 
 # Schema para categorías
+class CategoriaBase(BaseModel):
+    descripcion: str
+    icono: Optional[str] = None
+
+class CategoriaCreate(CategoriaBase):
+    id: str = Field(..., max_length=20)
+
+class CategoriaUpdate(CategoriaBase):
+    pass
+
 class CategoriaOut(BaseModel):
     id: str
     descripcion: str
+    icono: Optional[str] = None
     
     class Config:
         from_attributes = True

@@ -24,3 +24,37 @@ def create_item(db: Session, category_id, question: str, answer: str, action_pho
     db.commit()
     db.refresh(item)
     return item
+
+def update_category(db: Session, category_id: str, obj_in: dict) -> FaqCategory:
+    category = db.query(FaqCategory).filter(FaqCategory.id == category_id).first()
+    if category:
+        for field, value in obj_in.items():
+            setattr(category, field, value)
+        db.commit()
+        db.refresh(category)
+    return category
+
+def delete_category(db: Session, category_id: str) -> bool:
+    category = db.query(FaqCategory).filter(FaqCategory.id == category_id).first()
+    if category:
+        db.delete(category)
+        db.commit()
+        return True
+    return False
+
+def update_item(db: Session, item_id: str, obj_in: dict) -> FaqItem:
+    item = db.query(FaqItem).filter(FaqItem.id == item_id).first()
+    if item:
+        for field, value in obj_in.items():
+            setattr(item, field, value)
+        db.commit()
+        db.refresh(item)
+    return item
+
+def delete_item(db: Session, item_id: str) -> bool:
+    item = db.query(FaqItem).filter(FaqItem.id == item_id).first()
+    if item:
+        db.delete(item)
+        db.commit()
+        return True
+    return False

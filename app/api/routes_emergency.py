@@ -22,6 +22,8 @@ from app.models.peticion import Peticion
 from app.models.ubicacion import Ubicacion
 from app.services.storage_service import storage_service
 from groq import Groq
+from fastapi import WebSocket, WebSocketDisconnect
+from app.api.websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -99,6 +101,7 @@ async def report_emergency_alert(
     *,
     db: Session = Depends(get_db),
     report_request: EmergencyReportRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -228,6 +231,9 @@ async def report_emergency_alert(
             f"{report_request.sms_result.failedCount} fallos"
         )
         
+        # Notificar a la Sala de Control en tiempo real
+        background_tasks.add_task(manager.broadcast_alerts_update)
+
         return {
             "success": True,
             "message": "Reporte de alerta registrado exitosamente",
@@ -260,8 +266,11 @@ def get_alertas_activas(
     # if token_data.get("rol") != "Operador_Central": ...
 
     # Buscar peticiones en estado pendiente o en triaje
-    # Usamos joinedload para traer la ubicación en la misma consulta
-    peticiones = db.query(Peticion).options(joinedload(Peticion.ubicacion)).filter(
+    # Usamos joinedload para traer la ubicación y el usuario en la misma consulta
+    peticiones = db.query(Peticion).options(
+        joinedload(Peticion.ubicacion),
+        joinedload(Peticion.usuario)
+    ).filter(
         Peticion.estado_code.in_(["pendiente", "en_triaje"]), 
         Peticion.contacto_id == None
     ).all()
@@ -271,13 +280,23 @@ def get_alertas_activas(
         # Extraemos coordenadas si la petición tiene ubicación registrada
         lat = p.ubicacion.latitud if p.ubicacion else None
         lng = p.ubicacion.longitud if p.ubicacion else None
+        direccion = p.ubicacion.direccion if p.ubicacion else "Ubicación desconocida"
         
+        # Extraemos datos del usuario (víctima)
+        is_anonymous = p.usuario.is_anonymous if p.usuario else False
+        nombre_victima = "Usuario Anónimo" if is_anonymous else (p.usuario.full_name if p.usuario else "Desconocido")
+        telefono = p.usuario.phone if p.usuario and not is_anonymous else None
+
         resultado.append({
             "id": str(p.id),
             "usuario_id": str(p.usuario_id),
             "estado": p.estado_code,
             "lat": lat,
             "lng": lng,
+            "direccion": direccion,
+            "nombre_victima": nombre_victima,
+            "telefono": telefono,
+            "is_anonymous": is_anonymous,
             # Si tienes un campo de fecha, envíalo (ej. p.fecha_creacion), sino envíamos "Ahora"
             "fecha": "Ahora",
             "audio_url": p.audio 
@@ -285,11 +304,11 @@ def get_alertas_activas(
     
     return resultado
 
-# 3. Endpoint para que el Operador despache una unidad
 @router.put("/{peticion_id}/despachar")
 def despachar_alerta(
     peticion_id: str,
     payload: DespachoRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     token_data: dict = Depends(get_current_token)
 ):
@@ -314,7 +333,22 @@ def despachar_alerta(
     peticion.operador_id = token_data.get("sub") 
     
     db.commit()
+    
+    # Notificar a la Sala de Control web
+    background_tasks.add_task(manager.broadcast_alerts_update)
+    
     return {"message": "Unidad despachada", "estado": peticion.estado_code}
+
+# 3.5. Endpoint WebSocket para el Radar en Tiempo Real
+@router.websocket("/ws/radar")
+async def websocket_radar_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Mantener conexión viva y escuchar mensajes si hubiera
+            data = await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 # 4. Endpoint para obtener el historial completo de emergencias (para auditoría de tiempos)
 @router.get("/historial")
 def get_historial_alertas(

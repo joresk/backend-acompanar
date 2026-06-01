@@ -7,6 +7,15 @@ class FaqItemBase(BaseModel):
     action_phone: Optional[str] = None
     order: int = 0
 
+class FaqItemCreate(FaqItemBase):
+    pass
+
+class FaqItemUpdate(BaseModel):
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    action_phone: Optional[str] = None
+    order: Optional[int] = None
+
 class FaqItemResponse(FaqItemBase):
     id: UUID4
     category_id: UUID4
@@ -17,6 +26,13 @@ class FaqItemResponse(FaqItemBase):
 class FaqCategoryBase(BaseModel):
     name: str
     order: int = 0
+
+class FaqCategoryCreate(FaqCategoryBase):
+    pass
+
+class FaqCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    order: Optional[int] = None
 
 class FaqCategoryResponse(FaqCategoryBase):
     id: UUID4

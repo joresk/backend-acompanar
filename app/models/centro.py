@@ -8,6 +8,7 @@ class CategoriasCentros(Base):
     
     id = Column(String(20), primary_key=True)
     descripcion = Column(String(100), nullable=False)
+    icono = Column(String(20), nullable=True)
     
     # Relación
     centros = relationship("Centro", back_populates="categoria")

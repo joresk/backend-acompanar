@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
+from app.models.centro import Centro
 from app.schemas.centro import (
     CentroCreate, 
     CentroUpdate, 
@@ -56,6 +57,66 @@ def get_centros(
 def get_categorias(db: Session = Depends(get_db)):
     """Obtener todas las categorías disponibles"""
     return crud_centro.get_all_categorias(db)
+
+from app.schemas.centro import CategoriaCreate, CategoriaUpdate
+
+@router.post("/categorias", response_model=CategoriaOut, status_code=status.HTTP_201_CREATED)
+def create_categoria(
+    *,
+    db: Session = Depends(get_db),
+    cat_in: CategoriaCreate,
+    admin: User = Depends(get_admin_user)
+):
+    """Crear una nueva categoría (solo admin)"""
+    try:
+        categoria = crud_centro.create_categoria(db, obj_in=cat_in.dict())
+        return categoria
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al crear categoría: {str(e)}"
+        )
+
+@router.put("/categorias/{cat_id}", response_model=CategoriaOut)
+def update_categoria(
+    *,
+    db: Session = Depends(get_db),
+    cat_id: str,
+    cat_in: CategoriaUpdate,
+    admin: User = Depends(get_admin_user)
+):
+    """Actualizar categoría existente (solo admin)"""
+    categoria = crud_centro.update_categoria(db, cat_id=cat_id, obj_in=cat_in.dict(exclude_unset=True))
+    if not categoria:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Categoría no encontrada"
+        )
+    return categoria
+
+@router.delete("/categorias/{cat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_categoria(
+    *,
+    db: Session = Depends(get_db),
+    cat_id: str,
+    admin: User = Depends(get_admin_user)
+):
+    """Eliminar una categoría (solo admin)"""
+    # Verificar que no haya centros usando esta categoría
+    centros_con_cat = db.query(Centro).filter(Centro.categoria_code == cat_id).count()
+    if centros_con_cat > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se puede eliminar la categoría porque hay {centros_con_cat} centros que la utilizan."
+        )
+        
+    success = crud_centro.delete_categoria(db, cat_id=cat_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Categoría no encontrada"
+        )
+    return {"message": "Categoría eliminada exitosamente"}
 
 @router.get("/stats")
 def get_centro_stats(
@@ -143,7 +204,7 @@ def update_centro(
     admin: User = Depends(get_admin_user)
 ):
     """Actualizar centro existente (solo admin)"""
-    centro = crud_centro.get(db, id=centro_id)
+    centro = crud_centro.get_with_details(db, id=centro_id)
     if not centro:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -184,7 +245,7 @@ def register_centro_view(
     current_user: User = Depends(get_current_user)
 ):
     """Registrar que un usuario consultó un centro"""
-    centro = crud_centro.get(db, id=centro_id)
+    centro = crud_centro.get_with_details(db, id=centro_id)
     if not centro:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

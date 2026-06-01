@@ -176,7 +176,42 @@ class CRUDCentro:
     def get_all_categorias(self, db: Session) -> List[CategoriasCentros]:
         """Obtener todas las categorías disponibles"""
         return db.query(CategoriasCentros).all()
-    
+        
+    def create_categoria(self, db: Session, *, obj_in: dict) -> CategoriasCentros:
+        """Crear una nueva categoría"""
+        db_obj = CategoriasCentros(
+            id=obj_in["id"],
+            descripcion=obj_in["descripcion"],
+            icono=obj_in.get("icono")
+        )
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def update_categoria(self, db: Session, *, cat_id: str, obj_in: dict) -> Optional[CategoriasCentros]:
+        """Actualizar categoría"""
+        db_obj = db.query(CategoriasCentros).filter(CategoriasCentros.id == cat_id).first()
+        if not db_obj:
+            return None
+        
+        for field, value in obj_in.items():
+            setattr(db_obj, field, value)
+            
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def delete_categoria(self, db: Session, *, cat_id: str) -> bool:
+        """Eliminar categoría"""
+        db_obj = db.query(CategoriasCentros).filter(CategoriasCentros.id == cat_id).first()
+        if not db_obj:
+            return False
+            
+        db.delete(db_obj)
+        db.commit()
+        return True
+        
     def count_by_categoria(self, db: Session) -> Dict[str, int]:
         """Contar centros por categoría"""
         result = {}
