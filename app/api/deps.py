@@ -68,3 +68,14 @@ def get_current_user_optional(
     
     user = crud_user.get_user(db, user_id)
     return user if user and user.is_active else None
+
+def get_current_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Verifica que el usuario actual tenga rol de Admin"""
+    if current_user.rol != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren privilegios de administrador"
+        )
+    return current_user

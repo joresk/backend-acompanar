@@ -48,6 +48,7 @@ class CentroAyudaImagen(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     centro_id = Column(UUID(as_uuid=True), ForeignKey("centros_ayuda.id", ondelete="CASCADE"), nullable=False)
     url_imagen = Column(Text, nullable=False)
+    creado_en = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
     
     # Relación inversa para que cada imagen sepa a qué centro pertenece
     centro = relationship("Centro", back_populates="imagenes")

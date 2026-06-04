@@ -52,7 +52,8 @@ def create_user(db: Session, user: UserCreate, ip_address: Optional[str] = None)
         is_active=True,
         is_anonymous=user.is_anonymous,
         genero=genero,  # Usar el género mapeado
-        ip_dispositivo=ip_address
+        ip_dispositivo=ip_address,
+        rol=user.rol
     )
     
     db.add(db_user)

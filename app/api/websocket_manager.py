@@ -37,4 +37,12 @@ class ConnectionManager:
         })
         await self.broadcast(message)
 
+    async def broadcast_professionals_update(self):
+        """Notificar a todos los clientes que la ubicación de los móviles ha cambiado"""
+        message = json.dumps({
+            "type": "professionals_update",
+            "message": "Actualización de ubicación de unidades."
+        })
+        await self.broadcast(message)
+
 manager = ConnectionManager()

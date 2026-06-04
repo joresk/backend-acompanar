@@ -7,3 +7,5 @@ from app.models.ubicacion import Ubicacion
 from app.models.informe_mision import InformeMision
 from app.models.centro import Centro, CategoriasCentros, CentroAyudaTelefono, CentroAyudaImagen
 from app.models.faq import FaqCategory, FaqItem
+from app.models.rag_chunk import RagChunk
+from app.models.consulta_faq import ConsultaFaq

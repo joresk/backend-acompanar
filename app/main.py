@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.api import api_router
-from app.api import routes_emergencias
 import app.models
 import logging
 
@@ -30,7 +29,6 @@ app.add_middleware(
 
 # Incluir routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
-app.include_router(routes_emergencias.router, prefix="/api/emergencias")
 
 # Root endpoint
 @app.get("/")

@@ -13,6 +13,7 @@ class RolUsuarioEnum(str, Enum):
     VICTIMA = "Victima"
     OPERADOR_CENTRAL = "Operador_Central"
     PROFESIONAL_TERRENO = "Profesional_Terreno"
+    ADMIN = "Admin"
 class UserCreate(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = None
@@ -73,6 +74,9 @@ class UserOut(BaseModel):
     created_at: datetime
     genero: GenderEnum
     rol: RolUsuarioEnum
+    latitud_actual: Optional[float] = None
+    longitud_actual: Optional[float] = None
+    ultima_ubicacion_en: Optional[datetime] = None
 
     class Config:
         from_attributes = True

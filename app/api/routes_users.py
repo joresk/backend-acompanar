@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.schemas.user import UserCreate, UserLogin, UserOut, UserLocationUpdate
 from app.db.session import get_db
@@ -14,6 +14,8 @@ from app.schemas.auth import AnonymousLoginRequest
 from typing import List
 from pydantic import BaseModel
 from app.api import deps
+from app.api.websocket_manager import manager
+from app.models.peticion import Peticion
 
 router = APIRouter()
 
@@ -121,10 +123,19 @@ def get_profesionales(
     """
     Obtiene la lista de usuarios con rol PROFESIONAL_TERRENO para el despacho
     """
-    # Buscamos a los usuarios que tengan el rol correspondiente
+    # Subconsulta de profesionales ocupados (con peticion despachada)
+    subquery_ocupados = db.query(Peticion.profesional_id).filter(
+        Peticion.estado_code == "despachada",
+        Peticion.profesional_id.isnot(None)
+    ).subquery()
+
+    # Buscamos a los usuarios que tengan el rol correspondiente, ubicación activa, y NO estén ocupados
     profesionales = db.query(User).filter(
         User.rol == "Profesional_Terreno",
-        User.is_active == True
+        User.is_active == True,
+        User.latitud_actual.isnot(None),
+        User.longitud_actual.isnot(None),
+        ~User.id.in_(subquery_ocupados)
     ).all()
     
     return profesionales
@@ -138,8 +149,8 @@ class RoleUpdate(BaseModel):
 def get_all_users(
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
-    # token_data: dict = Depends(get_current_token) # Opcional: Proteger solo para admins
+    db: Session = Depends(get_db),
+    admin: User = Depends(deps.get_current_admin)
 ):
     """
     Obtiene la lista de todos los usuarios registrados en la plataforma.
@@ -150,7 +161,8 @@ def get_all_users(
 def update_role(
     user_id: str, 
     payload: RoleUpdate, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin: User = Depends(deps.get_current_admin)
 ):
     """
     Actualiza el rol de un usuario (Ej: de 'Victima' a 'Profesional_Terreno').
@@ -161,10 +173,27 @@ def update_role(
     
     return {"message": "Rol actualizado exitosamente", "rol": updated_user.rol}
 
+@router.post("/", response_model=UserOut)
+def create_admin_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(deps.get_current_admin)
+):
+    """
+    Crear un nuevo usuario operativo por parte del Admin.
+    """
+    if user_in.email:
+        existing = crud_user.get_user_by_email(db, user_in.email)
+        if existing:
+            raise HTTPException(status_code=400, detail="Email ya registrado.")
+    new_user = crud_user.create_user(db, user_in)
+    return new_user
+
 #Endpoint para que los profesionales de terreno actualicen su ubicación en tiempo real
 @router.put("/me/location")
 def update_my_location(
     location: UserLocationUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -180,4 +209,8 @@ def update_my_location(
     current_user.ultima_ubicacion_en = datetime.utcnow()
     
     db.commit()
+    
+    # Notificar a la Sala de Control web
+    background_tasks.add_task(manager.broadcast_professionals_update)
+    
     return {"success": True, "message": "Ubicación actualizada en el radar"}

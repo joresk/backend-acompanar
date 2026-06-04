@@ -40,3 +40,19 @@ class FaqCategoryResponse(FaqCategoryBase):
 
     class Config:
         from_attributes = True
+
+from datetime import datetime
+
+class ConsultaFaqBase(BaseModel):
+    guia_id: UUID4
+
+class ConsultaFaqCreate(ConsultaFaqBase):
+    pass
+
+class ConsultaFaqResponse(ConsultaFaqBase):
+    id: UUID4
+    usuario_id: UUID4
+    consultado_en: datetime
+
+    class Config:
+        from_attributes = True

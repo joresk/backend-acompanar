@@ -12,7 +12,7 @@ class PerfilSeguridad(Base):
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), unique=True, nullable=False)
     nivel_riesgo = Column(Integer, default=1)
     notas_contexto = Column(Text, nullable=True)
-    tipo_violencia = Column(String(255), nullable=True)
+    tipo_violencia = Column(Text, nullable=True)
     ultima_interaccion = Column(DateTime, server_default=func.now())
     ultimo_checkin = Column(DateTime, nullable=True)
 

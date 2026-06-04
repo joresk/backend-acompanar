@@ -31,7 +31,9 @@ client = Groq()
 
 # Interruptor global en memoria (Se reinicia si el servidor se apaga)
 AUTO_DISPATCH_ENABLED = False
-# 1. Esquema temporal para recibir el ID del profesional desde la web
+# Diccionario en memoria para bloqueos de operadores (Sincronización Sala de Control)
+LOCKED_ALERTS = {} # formato: { peticion_id: {"operator_id": str, "operator_name": str, "expires_at": datetime} }
+
 class DespachoRequest(BaseModel):
     profesional_id: str
 class FinalizarMisionRequest(BaseModel):
@@ -287,6 +289,15 @@ def get_alertas_activas(
         nombre_victima = "Usuario Anónimo" if is_anonymous else (p.usuario.full_name if p.usuario else "Desconocido")
         telefono = p.usuario.phone if p.usuario and not is_anonymous else None
 
+        # Verificar bloqueo activo
+        lock_info = LOCKED_ALERTS.get(str(p.id))
+        locked_by = None
+        if lock_info:
+            if datetime.utcnow() > lock_info["expires_at"]:
+                del LOCKED_ALERTS[str(p.id)] # Expiró el bloqueo
+            else:
+                locked_by = lock_info["operator_name"]
+
         resultado.append({
             "id": str(p.id),
             "usuario_id": str(p.usuario_id),
@@ -297,12 +308,40 @@ def get_alertas_activas(
             "nombre_victima": nombre_victima,
             "telefono": telefono,
             "is_anonymous": is_anonymous,
-            # Si tienes un campo de fecha, envíalo (ej. p.fecha_creacion), sino envíamos "Ahora"
-            "fecha": "Ahora",
-            "audio_url": p.audio 
+            "fecha": p.creado_en.isoformat() if p.creado_en else None,
+            "audio_url": p.audio,
+            "locked_by": locked_by
         })
     
     return resultado
+
+@router.post("/{peticion_id}/lock")
+def lock_alerta(
+    peticion_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
+    """Bloquea temporalmente una alerta para que otro operador no la asuma"""
+    LOCKED_ALERTS[peticion_id] = {
+        "operator_id": str(current_user.id),
+        "operator_name": current_user.full_name or "Operador",
+        "expires_at": datetime.utcnow() + timedelta(seconds=60)
+    }
+    background_tasks.add_task(manager.broadcast_alerts_update)
+    return {"success": True}
+
+@router.post("/{peticion_id}/unlock")
+def unlock_alerta(
+    peticion_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
+    """Libera el bloqueo de una alerta"""
+    if peticion_id in LOCKED_ALERTS:
+        if LOCKED_ALERTS[peticion_id]["operator_id"] == str(current_user.id):
+            del LOCKED_ALERTS[peticion_id]
+            background_tasks.add_task(manager.broadcast_alerts_update)
+    return {"success": True}
 
 @router.put("/{peticion_id}/despachar")
 def despachar_alerta(
@@ -331,6 +370,10 @@ def despachar_alerta(
     peticion.estado_code = "despachada"
     peticion.profesional_id = payload.profesional_id
     peticion.operador_id = token_data.get("sub") 
+    
+    # Liberar el bloqueo si existía
+    if peticion_id in LOCKED_ALERTS:
+        del LOCKED_ALERTS[peticion_id]
     
     db.commit()
     
@@ -549,16 +592,118 @@ def upload_deferred_audio(
 
     return {"message": "Evidencia de audio adjuntada exitosamente", "audio_url": audio_url}
 
-# Endpoint para que el Panel de Control (Streamlit) encienda/apague el modo autónomo
+# Endpoint para que el Panel de Control (Streamlit/Web) encienda/apague el modo autónomo
 @router.post("/toggle-auto-dispatch")
-def toggle_auto_dispatch(estado: bool, current_user: User = Depends(get_current_user)):
+def toggle_auto_dispatch(estado: bool, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     global AUTO_DISPATCH_ENABLED
     AUTO_DISPATCH_ENABLED = estado
+    if AUTO_DISPATCH_ENABLED:
+        run_auto_dispatch(db, background_tasks)
     return {"auto_dispatch": AUTO_DISPATCH_ENABLED}
+
+def run_auto_dispatch(db: Session, background_tasks: BackgroundTasks):
+    peticiones = db.query(Peticion).join(User, Peticion.usuario_id == User.id).options(
+        joinedload(Peticion.ubicacion),
+        joinedload(Peticion.usuario)
+    ).filter(
+        Peticion.estado_code.in_(["pendiente", "en_triaje"]),
+        Peticion.contacto_id == None
+    ).order_by(
+        User.is_anonymous.asc(),
+        Peticion.creado_en.asc()
+    ).all()
+
+    if not peticiones:
+        return
+
+    profesionales = db.query(User).filter(
+        User.rol == "Profesional_Terreno",
+        User.is_active == True,
+        User.latitud_actual.isnot(None),
+        User.longitud_actual.isnot(None)
+    ).all()
+
+    if not profesionales:
+        return
+
+    misiones_activas = db.query(Peticion.profesional_id).filter(
+        Peticion.estado_code == "despachada",
+        Peticion.profesional_id.isnot(None)
+    ).all()
+    profesionales_ocupados = set([m[0] for m in misiones_activas])
+
+    cambios = False
+
+    for peticion in peticiones:
+        if not peticion.ubicacion:
+            continue
+
+        profesional_mas_cercano = None
+        distancia_minima = float('inf')
+
+        for prof in profesionales:
+            if str(prof.id) in profesionales_ocupados:
+                continue
+
+            dist = calcular_distancia(
+                float(peticion.ubicacion.latitud),
+                float(peticion.ubicacion.longitud),
+                float(prof.latitud_actual),
+                float(prof.longitud_actual)
+            )
+
+            if dist < 5.0 and dist < distancia_minima:
+                distancia_minima = dist
+                profesional_mas_cercano = prof
+
+        if profesional_mas_cercano:
+            peticion.estado_code = "despachada"
+            peticion.profesional_id = str(profesional_mas_cercano.id)
+            profesionales_ocupados.add(str(profesional_mas_cercano.id))
+            cambios = True
+
+    if cambios:
+        db.commit()
+        background_tasks.add_task(manager.broadcast_alerts_update)
+
 
 @router.get("/auto-dispatch-status")
 def get_auto_dispatch_status():
     return {"auto_dispatch": AUTO_DISPATCH_ENABLED}
+
+@router.get("/monitor-estadisticas")
+def get_monitor_estadisticas(db: Session = Depends(get_db)):
+    # Despachadas
+    despachadas = db.query(Peticion).options(
+        joinedload(Peticion.usuario), joinedload(Peticion.profesional)
+    ).filter(Peticion.estado_code == "despachada").all()
+    
+    # Resueltas (últimas 10)
+    resueltas = db.query(Peticion).options(
+        joinedload(Peticion.usuario), joinedload(Peticion.profesional)
+    ).filter(Peticion.estado_code == "resuelta").order_by(Peticion.finalizado_en.desc()).limit(10).all()
+    
+    return {
+       "despachadas": {
+           "total": len(despachadas),
+           "anonimas": len([p for p in despachadas if p.usuario and p.usuario.is_anonymous]),
+           "registradas": len([p for p in despachadas if p.usuario and not p.usuario.is_anonymous]),
+           "lista": [{
+               "id": str(p.id),
+               "victima": p.usuario.full_name if p.usuario else "Desconocido", 
+               "profesional": p.profesional.full_name if p.profesional else "Desconocido", 
+               "is_anonymous": p.usuario.is_anonymous if p.usuario else False
+           } for p in despachadas]
+       },
+       "resueltas": {
+           "total": len(resueltas),
+           "lista": [{
+               "id": str(p.id),
+               "victima": p.usuario.full_name if p.usuario else "Desconocido", 
+               "profesional": p.profesional.full_name if p.profesional else "Desconocido"
+           } for p in resueltas]
+       }
+    }
 
 # Función Haversine para cálculo en memoria
 def calcular_distancia(lat1, lon1, lat2, lon2):

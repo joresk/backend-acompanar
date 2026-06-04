@@ -13,6 +13,7 @@ class RolUsuarioEnum(str, enum.Enum):
     VICTIMA = "Victima"
     OPERADOR_CENTRAL = "Operador_Central"
     PROFESIONAL_TERRENO = "Profesional_Terreno"
+    ADMIN = "Admin"
 class User(Base):
     __tablename__ = "usuarios"
 
