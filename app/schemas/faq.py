@@ -1,5 +1,6 @@
 from pydantic import BaseModel, UUID4
 from typing import List, Optional
+from datetime import datetime
 
 class FaqItemBase(BaseModel):
     question: str
@@ -41,10 +42,8 @@ class FaqCategoryResponse(FaqCategoryBase):
     class Config:
         from_attributes = True
 
-from datetime import datetime
-
 class ConsultaFaqBase(BaseModel):
-    guia_id: UUID4
+    faq_item_id: UUID4
 
 class ConsultaFaqCreate(ConsultaFaqBase):
     pass

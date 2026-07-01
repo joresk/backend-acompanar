@@ -58,7 +58,8 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://frontend-react-k2ps-2cbhwtahp-joresk-s-projects.vercel.app",
+        "https://frontend-react-k2ps-5c914cn4k-joresk-s-projects.vercel.app",
+        "https://frontend-react-k2ps.vercel.app",
     ]
     
     # Argentina específico

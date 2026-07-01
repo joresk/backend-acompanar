@@ -5,9 +5,14 @@ from app.schemas.auth import (
     AnonymousLoginRequest, 
     LoginWithDeviceRequest,
     RecoverPasswordRequest,
-    RecoverPasswordResponse
+    RecoverPasswordResponse,
+    VerifyCodeRequest,
+    ResetPasswordRequest
 )
 from app.schemas.token import Token
+import random
+from datetime import datetime, timedelta
+from app.utils.email import send_reset_email
 from app.db.session import get_db
 from app.api.deps import get_current_token
 from app.core import auth
@@ -193,7 +198,7 @@ def recover_password(
     req: RecoverPasswordRequest,
     db: Session = Depends(get_db)
 ):
-    """Envía instrucciones para recuperar contraseña"""
+    """Envía instrucciones (PIN de 6 dígitos) para recuperar contraseña"""
     user = crud_user.get_user_by_email(db, req.email)
     
     # Por seguridad, siempre devolver éxito aunque el email no exista
@@ -203,21 +208,72 @@ def recover_password(
             success=True
         )
     
-    # Generar contraseña temporal
-    temp_password = auth.generate_temp_password()
+    # Generar PIN de 6 dígitos
+    pin = str(random.randint(100000, 999999))
     
-    # Actualizar contraseña en BD
-    user.hashed_password = get_password_hash(temp_password)
+    # Guardar en BD con expiración de 15 minutos
+    user.reset_code = pin
+    user.reset_code_expires = datetime.utcnow() + timedelta(minutes=15)
     db.commit()
     
-    # TODO: Implementar envío de email real
-    # Por ahora, solo logueamos (en producción NUNCA hacer esto)
-    print(f"Contraseña temporal para {user.email}: {temp_password}")
+    # Enviar email
+    send_reset_email(user.email, pin)
     
     return RecoverPasswordResponse(
-        message="Se han enviado las instrucciones a tu email",
+        message="Se ha enviado un código de seguridad a tu email",
         success=True
     )
+
+@router.post("/verify-reset-code")
+def verify_reset_code(
+    req: VerifyCodeRequest,
+    db: Session = Depends(get_db)
+):
+    """Verifica si el PIN de 6 dígitos es válido y no ha expirado"""
+    user = crud_user.get_user_by_email(db, req.email)
+    
+    if not user or not user.reset_code or user.reset_code != req.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código inválido o incorrecto"
+        )
+        
+    if user.reset_code_expires and user.reset_code_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El código de seguridad ha expirado"
+        )
+        
+    return {"success": True, "message": "Código verificado correctamente"}
+
+@router.post("/reset-password")
+def reset_password(
+    req: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Establece una nueva contraseña usando el PIN de validación"""
+    user = crud_user.get_user_by_email(db, req.email)
+    
+    if not user or not user.reset_code or user.reset_code != req.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código inválido o incorrecto"
+        )
+        
+    if user.reset_code_expires and user.reset_code_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El código de seguridad ha expirado"
+        )
+        
+    # Actualizar contraseña
+    user.hashed_password = get_password_hash(req.new_password)
+    # Limpiar PIN
+    user.reset_code = None
+    user.reset_code_expires = None
+    db.commit()
+    
+    return {"success": True, "message": "Contraseña actualizada exitosamente"}
 
 # ----------- Ruta protegida de prueba -----------
 @router.get("/protected", response_model=UserOut)

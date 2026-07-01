@@ -45,6 +45,26 @@ def delete_item(item_id: str, db: Session = Depends(get_db)) -> Any:
     if not success: raise HTTPException(status_code=404, detail="Pregunta no encontrada")
     return {"msg": "Pregunta eliminada"}
 
+from app.api.deps import get_current_user_optional
+from app.models.user import User
+from typing import Optional
+
+@router.post("/items/{item_id}/view", status_code=status.HTTP_204_NO_CONTENT)
+def register_faq_view(
+    item_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """Registrar que un usuario consultó una FAQ"""
+    # Verificar si el item existe (esto es opcional pero buena práctica)
+    item = db.query(FaqItem).filter(FaqItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Pregunta no encontrada")
+    
+    user_id = current_user.id if current_user else None
+    crud_faq.register_view(db, item_id=item_id, user_id=user_id)
+    return None
+
 @router.post("/seed")
 def seed_faqs(db: Session = Depends(get_db)):
     """Puebla la base de datos con los FAQs por defecto (Solo para desarrollo)."""

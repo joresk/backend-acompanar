@@ -58,3 +58,12 @@ def delete_item(db: Session, item_id: str) -> bool:
         db.commit()
         return True
     return False
+
+def register_view(db: Session, item_id: str, user_id: str = None) -> None:
+    from app.models.consulta_faq import ConsultaFaq
+    consulta = ConsultaFaq(
+        faq_item_id=item_id,
+        usuario_id=user_id
+    )
+    db.add(consulta)
+    db.commit()

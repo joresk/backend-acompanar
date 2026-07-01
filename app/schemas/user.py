@@ -57,6 +57,7 @@ class UserLogin(BaseModel):
     password: str
 
 class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     password: Optional[str] = Field(default=None, min_length=6)
     phone: Optional[str] = None

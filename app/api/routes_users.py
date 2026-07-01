@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.schemas.user import UserCreate, UserLogin, UserOut, UserLocationUpdate
+from app.schemas.user import UserCreate, UserLogin, UserOut, UserLocationUpdate, UserUpdate
 from app.db.session import get_db
 from app.api.deps import get_current_token
 from app.core import auth
@@ -28,6 +28,25 @@ def read_users_me(
     Obtener el perfil del usuario actual.
     """
     return current_user
+
+# ----------- Actualizar datos del usuario actual -----------
+@router.put("/me", response_model=UserOut)
+def update_user_me(
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Actualizar el perfil del usuario actual.
+    """
+    if user_update.email and user_update.email != current_user.email:
+        existing = crud_user.get_user_by_email(db, user_update.email)
+        if existing:
+            raise HTTPException(status_code=400, detail="Email ya registrado.")
+            
+    updated_user = crud_user.update_user(db, str(current_user.id), user_update)
+    return updated_user
+
 # Rutas que aceptan anónimos (usando payload)
 @router.get("/public-info")
 def public_info(token_data: dict = Depends(get_current_token)):

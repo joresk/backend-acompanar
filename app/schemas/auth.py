@@ -39,3 +39,12 @@ class RecoverPasswordResponse(BaseModel):
 class GoogleLoginRequest(BaseModel):
     id_token: str
     device_info: DeviceInfo
+
+class VerifyCodeRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str

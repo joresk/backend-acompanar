@@ -39,6 +39,10 @@ class User(Base):
     longitud_actual = Column(Numeric(10, 6), nullable=True)
     rol = Column(String(50), default=RolUsuarioEnum.VICTIMA.value, nullable=False)
     
+    # Password Reset
+    reset_code = Column(String(6), nullable=True)
+    reset_code_expires = Column(DateTime, nullable=True)
+    
     # Relaciones
     contactos = relationship("Contact", back_populates="usuario", cascade="all, delete-orphan", order_by="Contact.id") # CAMBIO: "usuarios" a "usuario"
     #peticiones = relationship("Peticion", back_populates="usuario", cascade="all, delete-orphan") # CAMBIO: "usuarios" a "usuario"
